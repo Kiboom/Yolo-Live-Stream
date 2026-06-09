@@ -36,6 +36,7 @@ dependencies:
   cupertino_icons: ^1.0.8
 
   flutter_webrtc: ^0.12.11
+  ultralytics_yolo: ^0.6.1
 
 dev_dependencies:
   flutter_test:

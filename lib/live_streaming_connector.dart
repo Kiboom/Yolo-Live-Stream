@@ -4,39 +4,42 @@ import "dart:io";
 
 import "package:flutter_webrtc/flutter_webrtc.dart";
 
+/// 같은 Wi-Fi의 두 기기를 WebRTC로 직접 연결해 영상을 주고받는다.
+/// 송신자가 작은 서버를 열고, 수신자가 그 서버에 접속해 연결 정보(offer/answer)를 교환한다.
 class LiveStreamingConnector {
   LiveStreamingConnector({required this.onUpdate, required this.onError});
 
-  static const int _port = 8888;
-  static const Map<String, dynamic> _rtcConfig = {
-    "iceServers": [
-      {"urls": "stun:stun.l.google.com:19302"},
-    ],
-  };
+  static const int _port = 8888; // 연결 정보를 주고받는 포트
+  static const Map<String, dynamic> _rtcConfig = {"iceServers": []};
 
-  final void Function() onUpdate;
-  final void Function(String message) onError;
-  final RTCVideoRenderer localRenderer = RTCVideoRenderer();
-  final RTCVideoRenderer remoteRenderer = RTCVideoRenderer();
+  final void Function() onUpdate; // 상태가 바뀌면 화면을 다시 그리도록 알린다
+  final void Function(String message) onError; // 에러를 화면에 보여준다
+  final RTCVideoRenderer localRenderer = RTCVideoRenderer(); // 내 카메라 화면
+  final RTCVideoRenderer remoteRenderer = RTCVideoRenderer(); // 상대 카메라 화면
 
-  RTCPeerConnection? peerConnection;
-  MediaStream? localStream;
-  HttpServer? server;
-  WebSocket? socket;
-  String localIp = "";
-  bool isConnected = false;
+  RTCPeerConnection? peerConnection; // WebRTC 연결 본체
+  MediaStream? localStream; // 내 카메라 영상
+  HttpServer? server; // 송신자가 여는 서버
+  WebSocket? socket; // 연결 정보를 주고받는 통로
+  String localIp = ""; // 송신자가 보여줄 내 IP
+  bool isConnected = false; // 실제로 연결됐는지
+  bool isFrontCamera = true; // 지금 전면 카메라를 쓰는지
+  MediaStreamTrack? remoteVideoTrack; // 분석에 쓰는 상대 영상 트랙(onTrack에서 받음)
 
   bool get hasLocalVideo => localRenderer.srcObject != null;
   bool get hasRemoteVideo => remoteRenderer.srcObject != null;
 
+  // 영상을 그릴 화면(렌더러)을 준비한다. 위젯을 그리기 전에 한 번 호출한다.
   Future<void> initRenderers() async {
     await localRenderer.initialize();
     await remoteRenderer.initialize();
     onUpdate();
   }
 
+  // 송신자로 시작: 카메라를 켜고, 내 IP를 구한 뒤, 서버를 연다.
   Future<bool> startAsSender() async {
     try {
+      await close(); // 이전에 열려 있던 연결/서버가 있으면 먼저 정리한다
       await _openCamera();
       localIp = await _getLocalIp();
       onUpdate();
@@ -49,8 +52,10 @@ class LiveStreamingConnector {
     }
   }
 
+  // 수신자로 시작: 카메라를 켜고, 송신자 서버(IP)에 접속한다.
   Future<bool> startAsReceiver(String ip) async {
     try {
+      await close(); // 이전에 열려 있던 연결/서버가 있으면 먼저 정리한다
       await _openCamera();
       socket = await WebSocket.connect("ws://$ip:$_port");
       socket?.listen(_handleMessage);
@@ -62,8 +67,17 @@ class LiveStreamingConnector {
     }
   }
 
+  // 카메라를 켜고 WebRTC 연결을 만든다. 내 영상을 연결에 싣고, 상대 영상이 도착하면 화면에 표시한다.
   Future<void> _openCamera() async {
-    localStream = await navigator.mediaDevices.getUserMedia({"video": true, "audio": false});
+    localStream = await navigator.mediaDevices.getUserMedia({
+      "video": {
+        "facingMode": "user",
+        "width": 1280,
+        "height": 720,
+        "frameRate": 30,
+      },
+      "audio": true,
+    });
     localRenderer.srcObject = localStream;
     peerConnection = await createPeerConnection(_rtcConfig);
     for (final MediaStreamTrack track in localStream!.getTracks()) {
@@ -71,17 +85,21 @@ class LiveStreamingConnector {
     }
     peerConnection?.onTrack = (RTCTrackEvent event) {
       if (event.streams.isNotEmpty) {
-        remoteRenderer.srcObject = event.streams.first;
-        onUpdate();
+        remoteRenderer.srcObject = event.streams.first; // 상대 영상이 도착하면 화면에 연결
       }
+      if (event.track.kind == "video") {
+        remoteVideoTrack = event.track; // 분석용 트랙은 onTrack에서 직접 받는다(원격 스트림은 getVideoTracks가 비어 있을 수 있음)
+      }
+      onUpdate();
     };
     peerConnection?.onConnectionState = (RTCPeerConnectionState state) {
-      isConnected = state == .RTCPeerConnectionStateConnected;
+      isConnected = state == .RTCPeerConnectionStateConnected; // 연결 상태가 바뀔 때마다 갱신
       onUpdate();
     };
     onUpdate();
   }
 
+  // 송신자가 포트를 열고 수신자의 접속을 기다린다. 접속이 오면 offer를 보낸다.
   Future<void> _startServer() async {
     server = await HttpServer.bind(InternetAddress.anyIPv4, _port);
     server?.listen((HttpRequest request) async {
@@ -91,15 +109,14 @@ class LiveStreamingConnector {
     });
   }
 
+  // 연결 요청(offer)을 만들어 상대에게 보낸다.
   Future<void> _sendOffer() async {
-    if (peerConnection == null) return;
     final RTCSessionDescription offer = await peerConnection!.createOffer();
-    await peerConnection?.setLocalDescription(offer);
-    await _waitForNetworkInfo();
-    final RTCSessionDescription localDescription = (await peerConnection?.getLocalDescription())!;
-    _sendMessage({"type": localDescription.type, "sdp": localDescription.sdp});
+    await peerConnection!.setLocalDescription(offer);
+    await _sendLocalDescription();
   }
 
+  // 상대가 보낸 메시지를 연결 정보로 등록한다. offer를 받으면 answer로 응답한다.
   Future<void> _handleMessage(dynamic raw) async {
     final Map<String, dynamic> message = jsonDecode(raw as String) as Map<String, dynamic>;
     await peerConnection?.setRemoteDescription(
@@ -110,34 +127,42 @@ class LiveStreamingConnector {
     }
   }
 
+  // 받은 offer에 대한 응답(answer)을 만들어 보낸다.
   Future<void> _sendAnswer() async {
     final RTCSessionDescription answer = await peerConnection!.createAnswer();
     await peerConnection!.setLocalDescription(answer);
+    await _sendLocalDescription();
+  }
+
+  // 내 연결 정보(SDP)를 상대에게 보낸다. 네트워크 주소가 다 담길 때까지 잠깐 기다린 뒤 전송한다.
+  Future<void> _sendLocalDescription() async {
     await _waitForNetworkInfo();
-    final RTCSessionDescription? localDescription = await peerConnection!.getLocalDescription();
-    _sendMessage({"type": localDescription?.type, "sdp": localDescription?.sdp});
+    final RTCSessionDescription localDescription = (await peerConnection!.getLocalDescription())!;
+    _sendMessage({"type": localDescription.type, "sdp": localDescription.sdp});
   }
 
+  // 내 네트워크 주소가 연결 정보에 담길 시간을 잠깐 준다. 같은 Wi-Fi면 금방 끝난다.
   Future<void> _waitForNetworkInfo() async {
-    if (peerConnection!.iceGatheringState == .RTCIceGatheringStateComplete) {
-      return;
-    }
-    final Completer<void> completer = Completer<void>();
-    peerConnection!.onIceGatheringState = (RTCIceGatheringState state) {
-      if (state == .RTCIceGatheringStateComplete && !completer.isCompleted) {
-        completer.complete();
-      }
-    };
-    await completer.future.timeout(const Duration(seconds: 3), onTimeout: () {});
+    await Future.delayed(const Duration(seconds: 1));
   }
 
+  // 전면/후면 카메라를 전환한다.
+  Future<void> switchCamera() async {
+    final List<MediaStreamTrack> videoTracks = localStream?.getVideoTracks() ?? [];
+    if (videoTracks.isEmpty) return;
+    await Helper.switchCamera(videoTracks.first);
+    isFrontCamera = !isFrontCamera;
+    onUpdate();
+  }
+
+  // 통로(WebSocket)로 메시지를 JSON 형태로 보낸다.
   void _sendMessage(Map<String, dynamic> message) {
     socket?.add(jsonEncode(message));
   }
 
+  // 같은 Wi-Fi에서 접속할 수 있는 내 IP(예: 192.168.x.x)를 찾는다.
   Future<String> _getLocalIp() async {
     final List<NetworkInterface> interfaces = await NetworkInterface.list(type: InternetAddressType.IPv4);
-
     String localIp = "0.0.0.0";
     for (final NetworkInterface interface in interfaces) {
       for (final InternetAddress address in interface.addresses) {
@@ -153,10 +178,11 @@ class LiveStreamingConnector {
     return localIp;
   }
 
+  // 연결과 카메라를 모두 정리하고 끊는다.
   Future<void> close() async {
     await socket?.close();
     socket = null;
-    await server?.close();
+    await server?.close(force: true); // 포트(8888)를 즉시 반납하도록 강제로 닫는다
     server = null;
     await peerConnection?.close();
     peerConnection = null;
@@ -164,10 +190,12 @@ class LiveStreamingConnector {
     localStream = null;
     localRenderer.srcObject = null;
     remoteRenderer.srcObject = null;
+    remoteVideoTrack = null;
     isConnected = false;
     onUpdate();
   }
 
+  // 화면이 사라질 때 렌더러까지 완전히 정리한다.
   Future<void> dispose() async {
     await close();
     await localRenderer.dispose();
