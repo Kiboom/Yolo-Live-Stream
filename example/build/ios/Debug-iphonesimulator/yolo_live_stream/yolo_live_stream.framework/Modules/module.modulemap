@@ -1,0 +1,10 @@
+framework module yolo_live_stream {
+  umbrella header "yolo_live_stream-umbrella.h"
+
+  export *
+  module * { export * }
+}
+
+module yolo_live_stream.Swift {
+  header "yolo_live_stream-Swift.h"
+}

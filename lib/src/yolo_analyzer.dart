@@ -25,16 +25,30 @@ class YoloAnalyzer {
     required this.onUpdate,
     required this.getRemoteTrack,
     this.model = YoloModel.medium,
+    this.customModelPath,
     this.interval = const Duration(milliseconds: 400),
   });
 
   final YoloModel model;
 
-  // 분석 주기. 짧을수록 박스가 자주 갱신되지만 기기 부담이 커진다(중복 분석은 _isBusy로 방지).
+  /// 커스텀 모델 경로. 지정하면 model 대신 이 경로의 모델을 쓴다.
+  ///
+  /// 경로 형태
+  ///  - 에셋 (ex. "assets/...")
+  ///  - URL (ex. "https://...")
+  ///
+  /// 모델 형식
+  ///  - Android .tflite
+  ///  - iOS .mlpackage.zip
+  ///
+  /// 주의사항: 반드시 detect(task=detect) 계열 모델이어야 함
+  final String? customModelPath;
+
+  /// 분석 주기. 짧을수록 박스가 자주 갱신되지만 기기 부담이 커진다(중복 분석은 _isBusy로 방지).
   final Duration interval;
   final void Function() onUpdate;
   final MediaStreamTrack? Function() getRemoteTrack;
-  late final YOLO _yolo = YOLO(modelPath: model.id, task: YOLOTask.detect);
+  late final YOLO _yolo = YOLO(modelPath: customModelPath ?? model.id, task: YOLOTask.detect);
   bool _isModelLoaded = false;
   bool _isBusy = false;
   Timer? _timer;

@@ -16,20 +16,38 @@ class LiveStreamingView extends StatefulWidget {
     this.frameRate = 30,
     this.enableDetection = true,
     this.model = YoloModel.medium,
+    this.customModelPath,
     this.detectionInterval = const Duration(milliseconds: 400),
   });
 
   final Role role;
 
-  // 카메라 해상도와 초당 프레임 수.
+  /// 카메라 해상도.
   final VideoQuality quality;
+
+  /// 초당 프레임 수.
   final int frameRate;
 
-  // 수신 영상에 YOLO 객체 탐지를 켤지. 끄면 영상만 보여준다.
+  /// 수신 영상에 YOLO 객체 탐지를 켤지. 끄면 영상만 보여준다.
   final bool enableDetection;
 
-  // 모델 크기와 분석 주기.
+  /// 모델 크기.
   final YoloModel model;
+
+  /// 커스텀 모델 경로. 지정하면 model 대신 이 경로의 모델을 쓴다.
+  ///
+  /// 경로 형태
+  ///  - 에셋 (ex. "assets/...")
+  ///  - URL (ex. "https://...")
+  ///
+  /// 모델 형식
+  ///  - Android .tflite
+  ///  - iOS .mlpackage.zip
+  ///
+  /// 주의사항: 반드시 detect(task=detect) 계열 모델이어야 함
+  final String? customModelPath;
+
+  /// 분석 주기.
   final Duration detectionInterval;
 
   @override
@@ -62,6 +80,7 @@ class _LiveStreamingViewState extends State<LiveStreamingView> {
         },
         getRemoteTrack: () => connection.remoteVideoTrack,
         model: widget.model,
+        customModelPath: widget.customModelPath,
         interval: widget.detectionInterval,
       );
     }

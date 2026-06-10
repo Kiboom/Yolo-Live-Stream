@@ -13,7 +13,8 @@ class LiveStreamRoleSwitcher extends StatelessWidget {
 
   final Role role;
   final ValueChanged<Role> onChanged;
-  final bool enabled; // 연결 중엔 false로 잠글 수 있다
+  /// 연결 중엔 false로 잠글 수 있다.
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {

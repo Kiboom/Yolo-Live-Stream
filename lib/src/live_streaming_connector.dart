@@ -26,25 +26,50 @@ class LiveStreamingConnector {
     this.frameRate = 30,
   });
 
-  final VideoQuality quality; // 카메라 해상도
-  final int frameRate; // 초당 프레임 수
+  /// 카메라 해상도.
+  final VideoQuality quality;
+
+  /// 초당 프레임 수.
+  final int frameRate;
 
   static const int _port = 8888; // 연결 정보를 주고받는 포트
   static const Map<String, dynamic> _rtcConfig = {"iceServers": []};
 
-  final void Function() onUpdate; // 상태가 바뀌면 화면을 다시 그리도록 알린다
-  final void Function(String message) onError; // 에러를 화면에 보여준다
-  final RTCVideoRenderer localRenderer = RTCVideoRenderer(); // 내 카메라 화면
-  final RTCVideoRenderer remoteRenderer = RTCVideoRenderer(); // 상대 카메라 화면
+  /// 상태가 바뀌면 화면을 다시 그리도록 알린다.
+  final void Function() onUpdate;
 
-  RTCPeerConnection? peerConnection; // WebRTC 연결 본체
-  MediaStream? localStream; // 내 카메라 영상
-  HttpServer? server; // 송신자가 여는 서버
-  WebSocket? socket; // 연결 정보를 주고받는 통로
-  String localIp = ""; // 송신자가 보여줄 내 IP
-  bool isConnected = false; // 실제로 연결됐는지
-  bool isFrontCamera = true; // 지금 전면 카메라를 쓰는지
-  MediaStreamTrack? remoteVideoTrack; // 분석에 쓰는 상대 영상 트랙(onTrack에서 받음)
+  /// 에러를 화면에 보여준다.
+  final void Function(String message) onError;
+
+  /// 내 카메라 화면.
+  final RTCVideoRenderer localRenderer = RTCVideoRenderer();
+
+  /// 상대 카메라 화면.
+  final RTCVideoRenderer remoteRenderer = RTCVideoRenderer();
+
+  /// WebRTC 연결 본체.
+  RTCPeerConnection? peerConnection;
+
+  /// 내 카메라 영상.
+  MediaStream? localStream;
+
+  /// 송신자가 여는 서버.
+  HttpServer? server;
+
+  /// 연결 정보를 주고받는 통로.
+  WebSocket? socket;
+
+  /// 송신자가 보여줄 내 IP.
+  String localIp = "";
+
+  /// 실제로 연결됐는지.
+  bool isConnected = false;
+
+  /// 지금 전면 카메라를 쓰는지.
+  bool isFrontCamera = true;
+
+  /// 분석에 쓰는 상대 영상 트랙(onTrack에서 받음).
+  MediaStreamTrack? remoteVideoTrack;
 
   bool get hasLocalVideo => localRenderer.srcObject != null;
   bool get hasRemoteVideo => remoteRenderer.srcObject != null;
