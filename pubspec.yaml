@@ -3,8 +3,7 @@ description: "같은 Wi-Fi의 두 기기를 WebRTC로 직접 연결해 영상을
 version: 0.1.0
 
 homepage: https://yourstar.space
-# 배포 전에 실제 공개 레포 URL로 채우세요.
-# repository: https://github.com/<yourstar-account>/yolo_live_stream
+repository: https://github.com/Kiboom/Yolo-Live-Stream
 
 environment:
   sdk: ^3.12.0
