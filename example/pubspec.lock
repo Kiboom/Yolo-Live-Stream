@@ -65,6 +65,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.7"
+  cupertino_icons:
+    dependency: "direct main"
+    description:
+      name: cupertino_icons
+      sha256: "41e005c33bd814be4d3096aff55b1908d419fde52ca656c8c47719ec745873cd"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.9"
   dart_webrtc:
     dependency: transitive
     description:
@@ -137,7 +145,7 @@ packages:
     source: sdk
     version: "0.0.0"
   flutter_webrtc:
-    dependency: "direct main"
+    dependency: transitive
     description:
       name: flutter_webrtc
       sha256: b832dc76c0d1577f14aaf35e9c38d4ed7667cbc89c492b7bf4505d8d5f62e08b
@@ -510,7 +518,7 @@ packages:
     source: hosted
     version: "1.4.0"
   ultralytics_yolo:
-    dependency: "direct main"
+    dependency: transitive
     description:
       name: ultralytics_yolo
       sha256: "2bc2048c9a7125788988514eda29c0fa8b4237b89209979d254158ef29693c6d"
@@ -661,6 +669,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.3"
+  yolo_live_stream:
+    dependency: "direct main"
+    description:
+      path: ".."
+      relative: true
+    source: path
+    version: "0.1.0"
 sdks:
   dart: ">=3.12.0 <4.0.0"
   flutter: ">=3.44.0"

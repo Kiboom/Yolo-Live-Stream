@@ -1,0 +1,27 @@
+name: yolo_live_stream_example
+description: "yolo_live_stream 플러그인 데모 앱."
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  yolo_live_stream:
+    path: ../
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  config:
+    enable-swift-package-manager: false
+
+  uses-material-design: true

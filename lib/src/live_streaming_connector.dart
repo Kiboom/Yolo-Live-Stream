@@ -4,10 +4,30 @@ import "dart:io";
 
 import "package:flutter_webrtc/flutter_webrtc.dart";
 
+/// 카메라 해상도 프리셋(가로 x 세로).
+enum VideoQuality {
+  sd480(640, 480),
+  hd720(1280, 720),
+  fullHd1080(1920, 1080);
+
+  const VideoQuality(this.width, this.height);
+
+  final int width;
+  final int height;
+}
+
 /// 같은 Wi-Fi의 두 기기를 WebRTC로 직접 연결해 영상을 주고받는다.
 /// 송신자가 작은 서버를 열고, 수신자가 그 서버에 접속해 연결 정보(offer/answer)를 교환한다.
 class LiveStreamingConnector {
-  LiveStreamingConnector({required this.onUpdate, required this.onError});
+  LiveStreamingConnector({
+    required this.onUpdate,
+    required this.onError,
+    this.quality = VideoQuality.hd720,
+    this.frameRate = 30,
+  });
+
+  final VideoQuality quality; // 카메라 해상도
+  final int frameRate; // 초당 프레임 수
 
   static const int _port = 8888; // 연결 정보를 주고받는 포트
   static const Map<String, dynamic> _rtcConfig = {"iceServers": []};
@@ -72,9 +92,9 @@ class LiveStreamingConnector {
     localStream = await navigator.mediaDevices.getUserMedia({
       "video": {
         "facingMode": "user",
-        "width": 1280,
-        "height": 720,
-        "frameRate": 30,
+        "width": quality.width,
+        "height": quality.height,
+        "frameRate": frameRate,
       },
       "audio": true,
     });

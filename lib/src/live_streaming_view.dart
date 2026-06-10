@@ -1,25 +1,46 @@
 import "package:flutter/material.dart";
 import "package:flutter_webrtc/flutter_webrtc.dart";
-import "package:live_camera_app/detection_overlay.dart";
-import "package:live_camera_app/live_streaming_connector.dart";
-import "package:live_camera_app/yolo_analyzer.dart";
+import "package:yolo_live_stream/src/detection_overlay.dart";
+import "package:yolo_live_stream/src/live_streaming_connector.dart";
+import "package:yolo_live_stream/src/role.dart";
+import "package:yolo_live_stream/src/yolo_analyzer.dart";
 
-// 이 기기의 역할. 송신자는 영상을 보내고(서버), 수신자는 받는다(접속).
-enum Role { sender, receiver }
+/// 주어진 [role]로 영상을 송/수신하고 (켰으면) YOLO 오버레이를 얹는 위젯.
+/// 역할 선택 UI는 들어 있지 않다. 바깥에서 [RoleSwitcher] 등으로 role을 정해 넘긴다.
+/// role이 런타임에 바뀌면 진행 중이던 연결을 정리하고 새 역할의 대기 상태로 돌아간다.
+class LiveStreamingView extends StatefulWidget {
+  const LiveStreamingView({
+    super.key,
+    required this.role,
+    this.quality = VideoQuality.hd720,
+    this.frameRate = 30,
+    this.enableDetection = true,
+    this.model = YoloModel.medium,
+    this.detectionInterval = const Duration(milliseconds: 400),
+  });
 
-class LiveStreamingScreen extends StatefulWidget {
-  const LiveStreamingScreen({super.key});
+  final Role role;
+
+  // 카메라 해상도와 초당 프레임 수.
+  final VideoQuality quality;
+  final int frameRate;
+
+  // 수신 영상에 YOLO 객체 탐지를 켤지. 끄면 영상만 보여준다.
+  final bool enableDetection;
+
+  // 모델 크기와 분석 주기.
+  final YoloModel model;
+  final Duration detectionInterval;
 
   @override
-  State<LiveStreamingScreen> createState() => _LiveStreamingScreenState();
+  State<LiveStreamingView> createState() => _LiveStreamingViewState();
 }
 
-class _LiveStreamingScreenState extends State<LiveStreamingScreen> {
+class _LiveStreamingViewState extends State<LiveStreamingView> {
   late final LiveStreamingConnector connection; // 실제 영상 연결을 담당
-  late final YoloAnalyzer analyzer; // 수신 영상에 YOLO 객체 탐지를 돌린다
+  YoloAnalyzer? analyzer; // 수신 영상에 YOLO 객체 탐지를 돌린다(켰을 때만)
   final TextEditingController ipEditingController = TextEditingController(); // 수신자가 입력하는 송신자 IP
 
-  Role role = Role.sender; // 화면에서 고른 역할
   bool isStarted = false; // 시작 버튼을 눌렀는지
 
   @override
@@ -31,14 +52,29 @@ class _LiveStreamingScreenState extends State<LiveStreamingScreen> {
         setState(() {});
       },
       onError: _showMessage,
+      quality: widget.quality,
+      frameRate: widget.frameRate,
     );
-    analyzer = YoloAnalyzer(
-      onUpdate: () {
-        setState(() {});
-      },
-      getRemoteTrack: () => connection.remoteVideoTrack,
-    );
+    if (widget.enableDetection) {
+      analyzer = YoloAnalyzer(
+        onUpdate: () {
+          setState(() {});
+        },
+        getRemoteTrack: () => connection.remoteVideoTrack,
+        model: widget.model,
+        interval: widget.detectionInterval,
+      );
+    }
     connection.initRenderers();
+  }
+
+  @override
+  void didUpdateWidget(LiveStreamingView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 역할이 바뀌면 진행 중이던 연결을 정리하고 새 역할의 대기 상태로 돌린다.
+    if (oldWidget.role != widget.role && isStarted) {
+      stop();
+    }
   }
 
   // 영상 연결을 시작한다. 실패하면(예: 잘못된 IP) 다시 대기 상태로 돌린다.
@@ -47,7 +83,7 @@ class _LiveStreamingScreenState extends State<LiveStreamingScreen> {
       this.isStarted = true;
     });
 
-    final bool isStarted = role == .sender
+    final bool isStarted = widget.role == .sender
         ? await connection.startAsSender()
         : await connection.startAsReceiver(ipEditingController.text.trim());
 
@@ -58,9 +94,9 @@ class _LiveStreamingScreenState extends State<LiveStreamingScreen> {
       return;
     }
     // 수신자만 받은 영상에 객체 탐지를 돌린다.
-    if (role == .receiver) {
+    if (widget.role == .receiver && analyzer != null) {
       try {
-        await analyzer.start();
+        await analyzer!.start();
       } catch (error) {
         _showMessage("YOLO 모델 로드 실패: $error");
       }
@@ -68,7 +104,7 @@ class _LiveStreamingScreenState extends State<LiveStreamingScreen> {
   }
 
   Future<void> stop() async {
-    analyzer.stop();
+    analyzer?.stop();
     await connection.close();
     setState(() {
       isStarted = false;
@@ -83,7 +119,7 @@ class _LiveStreamingScreenState extends State<LiveStreamingScreen> {
 
   @override
   void dispose() {
-    analyzer.dispose();
+    analyzer?.dispose();
     connection.dispose();
     ipEditingController.dispose();
     super.dispose();
@@ -91,16 +127,13 @@ class _LiveStreamingScreenState extends State<LiveStreamingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0E0E12),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(child: _buildVideoArea()),
-            _buildControlPanel(),
-          ],
+    return Column(
+      children: [
+        Expanded(
+          child: _buildVideoArea(),
         ),
-      ),
+        _buildControlPanel(),
+      ],
     );
   }
 
@@ -119,7 +152,7 @@ class _LiveStreamingScreenState extends State<LiveStreamingScreen> {
           child: _buildPipVideo(),
         ),
         // 송신자는 자기 카메라가 큰 화면이므로, 그 위에 전/후면 전환 버튼을 둔다.
-        if (role == .sender && connection.hasLocalVideo) ...[
+        if (widget.role == .sender && connection.hasLocalVideo) ...[
           Positioned(
             right: 16,
             bottom: 16,
@@ -127,7 +160,7 @@ class _LiveStreamingScreenState extends State<LiveStreamingScreen> {
           ),
         ],
         // 분석 상태/오류를 눈으로 확인하기 위한 디버그 표시.
-        if (role == .receiver && isStarted) ...[
+        if (widget.role == .receiver && isStarted && analyzer != null) ...[
           Positioned(
             left: 16,
             bottom: 16,
@@ -146,15 +179,15 @@ class _LiveStreamingScreenState extends State<LiveStreamingScreen> {
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
-        analyzer.debugStatus,
+        analyzer!.debugStatus,
         style: const TextStyle(color: Colors.white, fontSize: 12),
       ),
     );
   }
 
-  // 큰 화면. 수신자는 받은 영상 위에 탐지 박스를, 송신자는 내 카메라를 보여준다.
+  // 큰 화면. 수신자는 받은 영상(켰으면 탐지 박스 포함)을, 송신자는 내 카메라를 보여준다.
   Widget _buildMainVideo() {
-    if (role == .receiver) {
+    if (widget.role == .receiver) {
       if (!connection.hasRemoteVideo) {
         return Container(
           width: double.infinity,
@@ -164,9 +197,20 @@ class _LiveStreamingScreenState extends State<LiveStreamingScreen> {
           child: _buildWaitingPlaceholder(),
         );
       }
-      return DetectionOverlay(
-        renderer: connection.remoteRenderer,
-        detections: analyzer.detections,
+      if (analyzer != null) {
+        return DetectionOverlay(
+          renderer: connection.remoteRenderer,
+          detections: analyzer!.detections,
+        );
+      }
+      return Container(
+        width: double.infinity,
+        height: double.infinity,
+        color: const Color(0xFF0E0E12),
+        child: RTCVideoView(
+          connection.remoteRenderer,
+          objectFit: .RTCVideoViewObjectFitContain,
+        ),
       );
     }
     return Container(
@@ -204,7 +248,7 @@ class _LiveStreamingScreenState extends State<LiveStreamingScreen> {
 
   // 우상단 작은 화면. 큰 화면과 반대쪽 영상을 보여준다.
   Widget _buildPipVideo() {
-    final bool showMyCamera = role == .receiver;
+    final bool showMyCamera = widget.role == .receiver;
     final RTCVideoRenderer renderer = showMyCamera ? connection.localRenderer : connection.remoteRenderer;
     final bool hasVideo = showMyCamera ? connection.hasLocalVideo : connection.hasRemoteVideo;
     if (!hasVideo) return const SizedBox.shrink();
@@ -287,100 +331,18 @@ class _LiveStreamingScreenState extends State<LiveStreamingScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _buildRoleSwitcher(),
-          const SizedBox(height: 16),
           // 수신자는 시작 전에 송신자 IP를 입력한다.
-          if (!isStarted && role == .receiver) ...[
+          if (!isStarted && widget.role == .receiver) ...[
             _buildIpField(),
             const SizedBox(height: 16),
           ],
           // 송신자는 시작 후 자기 IP를 보여준다.
-          if (isStarted && role == .sender) ...[
+          if (isStarted && widget.role == .sender) ...[
             _buildIpBanner(),
             const SizedBox(height: 16),
           ],
           _buildActionButton(),
         ],
-      ),
-    );
-  }
-
-  Widget _buildRoleSwitcher() {
-    return Container(
-      height: 56,
-      padding: const EdgeInsets.all(5),
-      decoration: BoxDecoration(
-        color: const Color(0xFF26262F),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Stack(
-        children: [
-          // 선택된 칸을 표시하는 흰 박스. 역할을 바꾸면 좌우로 살짝 튕기며 이동한다.
-          AnimatedAlign(
-            alignment: role == .sender ? Alignment.centerLeft : Alignment.centerRight,
-            duration: const Duration(milliseconds: 420),
-            curve: Curves.easeOutBack,
-            child: FractionallySizedBox(
-              widthFactor: 0.5,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.25),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Row(
-            children: [
-              Expanded(
-                child: _buildRoleTab(.sender, "송신자", Icons.videocam_rounded),
-              ),
-              Expanded(
-                child: _buildRoleTab(.receiver, "수신자", Icons.tv_rounded),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRoleTab(Role role, String label, IconData icon) {
-    final bool isSelected = this.role == role;
-    final Color color = isSelected ? const Color(0xFF17171E) : Colors.white60;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        if (isStarted) return;
-        setState(() {
-          this.role = role;
-        });
-      },
-      child: Container(
-        alignment: Alignment.center,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 18, color: color),
-            const SizedBox(width: 6),
-            AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 250),
-              style: TextStyle(
-                color: color,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
-              child: Text(label),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -461,7 +423,7 @@ class _LiveStreamingScreenState extends State<LiveStreamingScreen> {
           : FilledButton(
               onPressed: start,
               child: Text(
-                role == .sender ? "송신 시작" : "수신 시작",
+                widget.role == .sender ? "송신 시작" : "수신 시작",
                 style: const TextStyle(
                   fontSize: 16,
                 ),

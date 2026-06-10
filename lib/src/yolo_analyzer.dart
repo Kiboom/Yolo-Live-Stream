@@ -4,20 +4,37 @@ import "dart:typed_data";
 import "package:flutter_webrtc/flutter_webrtc.dart";
 import "package:ultralytics_yolo/ultralytics_yolo.dart";
 
+/// YOLO 모델 크기. 왼쪽일수록 빠르고 부정확, 오른쪽일수록 느리고 정확하다.
+enum YoloModel {
+  nano("yolo26n"),
+  small("yolo26s"),
+  medium("yolo26m"),
+  large("yolo26l"),
+  extraLarge("yolo26x");
+
+  const YoloModel(this.id);
+
+  /// ultralytics_yolo에 넘기는 모델 식별자(파일명).
+  final String id;
+}
+
 /// 수신한 영상에서 주기적으로 프레임을 캡처해 YOLO 객체 탐지를 돌린다.
 /// 결과(detections)는 화면이 오버레이로 그린다.
 class YoloAnalyzer {
-  YoloAnalyzer({required this.onUpdate, required this.getRemoteTrack});
+  YoloAnalyzer({
+    required this.onUpdate,
+    required this.getRemoteTrack,
+    this.model = YoloModel.medium,
+    this.interval = const Duration(milliseconds: 400),
+  });
 
-  // 모델 크기 옵션(왼쪽일수록 빠르고 부정확, 오른쪽일수록 느리고 정확):
-  // yolo26n < yolo26s < yolo26m < yolo26l < yolo26x
-  static const String _modelId = "yolo26m";
+  final YoloModel model;
 
   // 분석 주기. 짧을수록 박스가 자주 갱신되지만 기기 부담이 커진다(중복 분석은 _isBusy로 방지).
-  static const Duration _interval = Duration(milliseconds: 400);
+  final Duration interval;
   final void Function() onUpdate;
   final MediaStreamTrack? Function() getRemoteTrack;
-  final YOLO _yolo = YOLO(modelPath: _modelId, task: YOLOTask.detect);
+  late final YOLO _yolo = YOLO(modelPath: model.id, task: YOLOTask.detect);
   bool _isModelLoaded = false;
   bool _isBusy = false;
   Timer? _timer;
@@ -34,7 +51,7 @@ class YoloAnalyzer {
       debugStatus = "모델 로드 완료";
       onUpdate();
     }
-    _timer ??= Timer.periodic(_interval, (_) => _analyzeFrame());
+    _timer ??= Timer.periodic(interval, (_) => _analyzeFrame());
   }
 
   Future<void> _analyzeFrame() async {

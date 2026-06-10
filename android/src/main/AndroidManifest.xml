@@ -1,0 +1,10 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 이 플러그인을 쓰는 앱에 자동으로 병합되는 권한/설정 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature android:name="android.hardware.camera" />
+    <uses-feature android:name="android.hardware.camera.autofocus" />
+    <!-- 같은 Wi-Fi의 평문(http/ws) 시그널링 통신 허용 -->
+    <application android:usesCleartextTraffic="true" />
+</manifest>
