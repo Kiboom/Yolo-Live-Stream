@@ -29,7 +29,7 @@ class LiveStreamRoleSwitcher extends StatelessWidget {
         children: [
           // 선택된 칸을 표시하는 흰 박스. 역할을 바꾸면 좌우로 살짝 튕기며 이동한다.
           AnimatedAlign(
-            alignment: role == .sender ? Alignment.centerLeft : Alignment.centerRight,
+            alignment: role == Role.sender ? Alignment.centerLeft : Alignment.centerRight,
             duration: const Duration(milliseconds: 420),
             curve: Curves.easeOutBack,
             child: FractionallySizedBox(
@@ -51,8 +51,8 @@ class LiveStreamRoleSwitcher extends StatelessWidget {
           ),
           Row(
             children: [
-              Expanded(child: _buildTab(.sender, "송신자", Icons.videocam_rounded)),
-              Expanded(child: _buildTab(.receiver, "수신자", Icons.tv_rounded)),
+              Expanded(child: _buildTab(Role.sender, "송신자", Icons.videocam_rounded)),
+              Expanded(child: _buildTab(Role.receiver, "수신자", Icons.tv_rounded)),
             ],
           ),
         ],

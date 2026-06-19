@@ -24,6 +24,7 @@ class YoloAnalyzer {
   YoloAnalyzer({
     required this.onUpdate,
     required this.getRemoteTrack,
+    this.onDetected,
     this.model = YoloModel.medium,
     this.customModelPath,
     this.interval = const Duration(milliseconds: 400),
@@ -47,6 +48,8 @@ class YoloAnalyzer {
   /// 분석 주기. 짧을수록 박스가 자주 갱신되지만 기기 부담이 커진다(중복 분석은 _isBusy로 방지).
   final Duration interval;
   final void Function() onUpdate;
+  /// 매 프레임 분석이 끝나면 그 결과로 호출된다.
+  final void Function(List<YOLOResult> detections)? onDetected;
   final MediaStreamTrack? Function() getRemoteTrack;
   late final YOLO _yolo = YOLO(modelPath: customModelPath ?? model.id, task: YOLOTask.detect);
   bool _isModelLoaded = false;
@@ -82,6 +85,7 @@ class YoloAnalyzer {
       final Map<String, dynamic> result = await _yolo.predict(frame);
       final List<dynamic> rawDetections = (result["detections"] as List?) ?? [];
       detections = rawDetections.map((item) => YOLOResult.fromMap(item as Map)).toList();
+      onDetected?.call(detections);
       debugStatus = "프레임 ${frame.length ~/ 1024}KB, 탐지 ${detections.length}개";
       onUpdate();
     } catch (error) {

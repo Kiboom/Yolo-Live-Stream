@@ -59,12 +59,59 @@ LiveStreamingView(
   role: role,                                // 필수
   quality: VideoQuality.hd720,               // sd480 / hd720 / fullHd1080
   frameRate: 30,                             // 초당 프레임 수
+  enableSpeaker: true,                       // false면 수신 음성을 출력하지 않음
   enableDetection: true,                     // false면 영상만(YOLO 끔)
   model: YoloModel.medium,                   // nano < small < medium < large < extraLarge
   customModelPath: null,                     // 커스텀 모델 경로(지정 시 model 무시)
   detectionInterval: Duration(milliseconds: 400),
+  showControlPanel: true,                    // false면 영상+탐지 오버레이만 (내장 UI 숨김)
+  autoStart: false,                          // true면 위젯이 뜨자마자 자동 연결
+  senderIp: null,                            // autoStart 수신자가 접속할 송신자 IP
+  onDetected: null,                          // (List<YOLOResult> results) { ... } 탐지 결과 콜백
+  onLocalIpReady: null,                      // (String ip) { ... } 송신자 자기 IP 콜백
 );
 ```
+
+### 1-1) 커스텀 UI로 쓰기 (컨트롤 패널 없이)
+
+앱에 고유한 IP 입력·시작/종료 UI가 있으면 `showControlPanel: false`로 내장 UI(IP 입력·버튼·상태 배지·PiP·카메라 전환 버튼)를 끄고 영상+탐지 오버레이만 띄울 수 있습니다. 이땐 시작/종료를 아래 두 방법으로 제어합니다.
+
+**자동 시작 (`autoStart`)**: 위젯이 화면에 올라오면 자동으로 연결하고, 사라지면 종료합니다. 수신자는 `senderIp`가 필요합니다.
+
+```dart
+LiveStreamingView(
+  role: Role.receiver,
+  showControlPanel: false,
+  autoStart: true,
+  senderIp: "192.168.0.12",
+  onDetected: (results) {
+    // TTS, 진동 등 앱 로직에 연결
+  },
+);
+```
+
+**컨트롤러 (`LiveStreamingController`)**: 코드에서 직접 시작/종료/카메라 전환을 호출합니다. 위젯을 띄운 채 연결만 켜고 끌 수 있습니다.
+
+```dart
+final controller = LiveStreamingController();
+
+LiveStreamingView(
+  role: Role.receiver,
+  controller: controller,
+  showControlPanel: false,
+  onDetected: (results) { /* ... */ },
+);
+
+// 어디서든 명령형으로 제어:
+await controller.startAsReceiver("192.168.0.12"); // 송신자면 controller.startAsSender()
+await controller.switchCamera();
+controller.setSpeakerEnabled(false); // 수신 음성 출력 끄기
+await controller.stop();
+// controller.localIp / isConnected / isStarted / isSpeakerEnabled 로 상태를 읽는다.
+// ChangeNotifier라 controller.addListener(...)로 상태 변화를 구독할 수 있다.
+```
+
+송신자로 시작하면 `onLocalIpReady` 콜백(또는 `controller.localIp`)으로 자기 IP를 받아 수신자에게 알려줄 수 있습니다.
 
 ### 2) 조립형 (직접 화면을 꾸밀 때)
 

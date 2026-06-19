@@ -24,6 +24,7 @@ class LiveStreamingConnector {
     required this.onError,
     this.quality = VideoQuality.hd720,
     this.frameRate = 30,
+    this.isRemoteAudioEnabled = true,
   });
 
   /// 카메라 해상도.
@@ -67,6 +68,9 @@ class LiveStreamingConnector {
 
   /// 지금 전면 카메라를 쓰는지.
   bool isFrontCamera = true;
+
+  /// 수신한 상대 음성을 출력할지. false면 받은 오디오를 무음 처리한다.
+  bool isRemoteAudioEnabled;
 
   /// 분석에 쓰는 상대 영상 트랙(onTrack에서 받음).
   MediaStreamTrack? remoteVideoTrack;
@@ -134,11 +138,13 @@ class LiveStreamingConnector {
       }
       if (event.track.kind == "video") {
         remoteVideoTrack = event.track; // 분석용 트랙은 onTrack에서 직접 받는다(원격 스트림은 getVideoTracks가 비어 있을 수 있음)
+      } else if (event.track.kind == "audio") {
+        event.track.enabled = isRemoteAudioEnabled; // 수신 음성 출력 설정을 새 오디오 트랙에 적용
       }
       onUpdate();
     };
     peerConnection?.onConnectionState = (RTCPeerConnectionState state) {
-      isConnected = state == .RTCPeerConnectionStateConnected; // 연결 상태가 바뀔 때마다 갱신
+      isConnected = state == RTCPeerConnectionState.RTCPeerConnectionStateConnected; // 연결 상태가 바뀔 때마다 갱신
       onUpdate();
     };
     onUpdate();
@@ -197,6 +203,15 @@ class LiveStreamingConnector {
     if (videoTracks.isEmpty) return;
     await Helper.switchCamera(videoTracks.first);
     isFrontCamera = !isFrontCamera;
+    onUpdate();
+  }
+
+  // 수신한 상대 음성의 출력을 켜고 끈다.
+  void setRemoteAudioEnabled(bool enabled) {
+    isRemoteAudioEnabled = enabled;
+    for (final MediaStreamTrack track in remoteRenderer.srcObject?.getAudioTracks() ?? []) {
+      track.enabled = enabled;
+    }
     onUpdate();
   }
 

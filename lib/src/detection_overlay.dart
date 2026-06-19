@@ -26,7 +26,7 @@ class DetectionOverlay extends StatelessWidget {
         aspectRatio: aspectRatio <= 0 ? 16 / 9 : aspectRatio,
         child: Stack(
           children: [
-            RTCVideoView(renderer, objectFit: .RTCVideoViewObjectFitContain),
+            RTCVideoView(renderer, objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain),
             Positioned.fill(
               child: CustomPaint(painter: _DetectionPainter(detections)),
             ),
