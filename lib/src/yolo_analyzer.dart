@@ -100,6 +100,8 @@ class YoloAnalyzer {
   void stop() {
     _timer?.cancel();
     _timer = null;
+    _isBusy = false; // in-flight 분석이 트랙 폐기로 안 끝나도 재연결 시 멈추지 않도록 리셋
+
     detections = [];
     onUpdate();
   }

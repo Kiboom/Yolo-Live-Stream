@@ -121,6 +121,10 @@ class LiveStreamingConnector {
 
   // 카메라를 켜고 WebRTC 연결을 만든다. 내 영상을 연결에 싣고, 상대 영상이 도착하면 화면에 표시한다.
   Future<void> _openCamera() async {
+    // enableSpeaker=false면 WebRTC가 기기 오디오를 통신 모드로 점유해 앱 전체(TTS 등) 소리가 음소거되는 것을 막는다(미디어 모드로 세션 시작).
+    if (!isRemoteAudioEnabled) {
+      await Helper.setAndroidAudioConfiguration(AndroidAudioConfiguration.media);
+    }
     localStream = await navigator.mediaDevices.getUserMedia({
       "video": {
         "facingMode": "user",
