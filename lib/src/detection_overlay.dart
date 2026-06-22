@@ -9,10 +9,14 @@ class DetectionOverlay extends StatelessWidget {
     super.key,
     required this.renderer,
     required this.detections,
+    this.mirror = false,
   });
 
   final RTCVideoRenderer renderer;
   final List<YOLOResult> detections;
+
+  /// 영상을 좌우반전해 그릴지. 박스 x좌표도 같이 뒤집어 정렬을 맞춘다.
+  final bool mirror;
 
   @override
   Widget build(BuildContext context) {
@@ -26,9 +30,9 @@ class DetectionOverlay extends StatelessWidget {
         aspectRatio: aspectRatio <= 0 ? 16 / 9 : aspectRatio,
         child: Stack(
           children: [
-            RTCVideoView(renderer, objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain),
+            RTCVideoView(renderer, mirror: mirror, objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain),
             Positioned.fill(
-              child: CustomPaint(painter: _DetectionPainter(detections)),
+              child: CustomPaint(painter: _DetectionPainter(detections, mirror)),
             ),
           ],
         ),
@@ -38,9 +42,10 @@ class DetectionOverlay extends StatelessWidget {
 }
 
 class _DetectionPainter extends CustomPainter {
-  _DetectionPainter(this.detections);
+  _DetectionPainter(this.detections, this.mirror);
 
   final List<YOLOResult> detections;
+  final bool mirror;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -49,10 +54,17 @@ class _DetectionPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
     for (final YOLOResult detection in detections) {
+      // 영상을 좌우반전하면 박스 x도 뒤집어야 맞다(라벨 텍스트는 반전하지 않는다).
+      final double left = mirror
+          ? 1 - detection.normalizedBox.right
+          : detection.normalizedBox.left;
+      final double right = mirror
+          ? 1 - detection.normalizedBox.left
+          : detection.normalizedBox.right;
       final Rect box = Rect.fromLTRB(
-        detection.normalizedBox.left * size.width,
+        left * size.width,
         detection.normalizedBox.top * size.height,
-        detection.normalizedBox.right * size.width,
+        right * size.width,
         detection.normalizedBox.bottom * size.height,
       );
       canvas.drawRect(box, boxPaint);
@@ -79,5 +91,6 @@ class _DetectionPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_DetectionPainter oldDelegate) => oldDelegate.detections != detections;
+  bool shouldRepaint(_DetectionPainter oldDelegate) =>
+      oldDelegate.detections != detections || oldDelegate.mirror != mirror;
 }

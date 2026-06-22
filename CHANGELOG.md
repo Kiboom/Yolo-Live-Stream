@@ -1,3 +1,8 @@
+## 0.8.0
+
+- 송신자가 현재 카메라 방향(전/후면)을 수신자에게 신호로 보내고, 수신자는 송신 카메라가 전면일 때만 받은 영상과 YOLO 탐지 박스를 좌우반전해 표시한다. 전면 카메라 영상이 수신 측에서 거울처럼 뒤집혀 보이던 문제를 바로잡는다.
+- `LiveStreamingController.remoteIsFrontCamera` getter와 `DetectionOverlay.mirror` 옵션 추가.
+
 ## 0.7.0
 
 - `LiveStreamingController`가 영상 세션(WebRTC 연결·렌더러·YOLO 분석기)을 직접 소유하도록 변경. 같은 controller를 여러 `LiveStreamingView`에 넘기면 화면이 바뀌어도 같은 연결을 끊김 없이 이어서 그린다(예: 작은 카드에서 전체화면으로 전환).

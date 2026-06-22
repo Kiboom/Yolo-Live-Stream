@@ -96,6 +96,9 @@ class LiveStreamingController extends ChangeNotifier {
   /// 수신 음성을 출력하는 상태인지.
   bool get isSpeakerEnabled => connection.isRemoteAudioEnabled;
 
+  /// 상대가 전면 카메라를 쓰는지(상대 신호 기준).
+  bool get remoteIsFrontCamera => connection.remoteIsFrontCamera;
+
   /// 렌더러와 분석기를 준비한다. 시작 메서드가 자동으로 호출하므로 보통은 직접 부를 필요가 없다.
   Future<void> prepare() async {
     if (_ready || _disposed) return;
@@ -485,6 +488,7 @@ class _LiveStreamingViewState extends State<LiveStreamingView> {
         return DetectionOverlay(
           renderer: connection.remoteRenderer,
           detections: session.detections,
+          mirror: session.remoteIsFrontCamera,
         );
       }
       return Container(
@@ -493,6 +497,7 @@ class _LiveStreamingViewState extends State<LiveStreamingView> {
         color: const Color(0xFF0E0E12),
         child: RTCVideoView(
           connection.remoteRenderer,
+          mirror: session.remoteIsFrontCamera,
           objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
         ),
       );
@@ -548,7 +553,7 @@ class _LiveStreamingViewState extends State<LiveStreamingView> {
       ),
       child: RTCVideoView(
         renderer,
-        mirror: showMyCamera && connection.isFrontCamera,
+        mirror: showMyCamera ? connection.isFrontCamera : connection.remoteIsFrontCamera,
         objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
       ),
     );
