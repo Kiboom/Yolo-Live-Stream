@@ -1,3 +1,10 @@
+## 0.9.0
+
+- 0.8.0의 facing 기반 자동 미러를 제거하고, 수동 좌우반전으로 대체. iOS·Android 모두에서 연결마다 영상 미러가 들쭉날쭉하던 문제를 사용자 토글로 해결한다.
+- `LiveStreamingController.mirror`·`setMirror`·`toggleMirror` 추가. 한쪽이 토글하면 상대에게 신호로 전달돼 양쪽 표시(영상·탐지 박스)가 함께 뒤집힌다.
+- `LiveStreamingView.showMirrorButton`(기본 false) 추가. 켜면 좌우반전 토글 버튼이 보인다.
+- `LiveStreamingView.showPip`(기본 true) 추가. false면 우상단 보조 영상(PiP)을 숨긴다.
+
 ## 0.8.0
 
 - 송신자가 현재 카메라 방향(전/후면)을 수신자에게 신호로 보내고, 수신자는 송신 카메라가 전면일 때만 받은 영상과 YOLO 탐지 박스를 좌우반전해 표시한다. 전면 카메라 영상이 수신 측에서 거울처럼 뒤집혀 보이던 문제를 바로잡는다.

@@ -96,8 +96,14 @@ class LiveStreamingController extends ChangeNotifier {
   /// 수신 음성을 출력하는 상태인지.
   bool get isSpeakerEnabled => connection.isRemoteAudioEnabled;
 
-  /// 상대가 전면 카메라를 쓰는지(상대 신호 기준).
-  bool get remoteIsFrontCamera => connection.remoteIsFrontCamera;
+  /// 영상을 좌우반전해 보여줄지(수동 미러).
+  bool get mirror => connection.mirror;
+
+  /// 미러를 켜고 끈다. 송신 측이 호출하면 상대에게 전달돼 수신 표시가 뒤집힌다.
+  void setMirror(bool on) => connection.setMirror(on);
+
+  /// 현재 미러 상태를 토글한다.
+  void toggleMirror() => connection.setMirror(!connection.mirror);
 
   /// 렌더러와 분석기를 준비한다. 시작 메서드가 자동으로 호출하므로 보통은 직접 부를 필요가 없다.
   Future<void> prepare() async {
@@ -212,6 +218,8 @@ class LiveStreamingView extends StatefulWidget {
     this.customModelPath,
     this.detectionInterval = const Duration(milliseconds: 400),
     this.showControlPanel = true,
+    this.showMirrorButton = false,
+    this.showPip = true,
     this.autoStart = false,
     this.senderIp,
     this.onDetected,
@@ -257,6 +265,12 @@ class LiveStreamingView extends StatefulWidget {
   /// 내장 컨트롤 UI(IP 입력·시작/종료 버튼·상태 배지·PiP·카메라 전환 버튼)를 보일지.
   /// false면 영상과 탐지 오버레이만 남는다. 이땐 [autoStart]나 [controller]로 시작/종료한다.
   final bool showControlPanel;
+
+  /// 좌우반전 토글 버튼을 보일지. 송신 측에서 켜면 누를 때 상대 표시가 뒤집힌다.
+  final bool showMirrorButton;
+
+  /// 우상단 보조 영상(PiP)을 보일지.
+  final bool showPip;
 
   /// 위젯이 화면에 올라오면 자동으로 연결을 시작할지. 수신자는 [senderIp]가 있어야 한다.
   final bool autoStart;
@@ -428,11 +442,12 @@ class _LiveStreamingViewState extends State<LiveStreamingView> {
             left: 16,
             child: _buildStatusBadge(),
           ),
-          Positioned(
-            top: 16,
-            right: 16,
-            child: _buildPipVideo(),
-          ),
+          if (widget.showPip)
+            Positioned(
+              top: 16,
+              right: 16,
+              child: _buildPipVideo(),
+            ),
           // 송신자는 자기 카메라가 큰 화면이므로, 그 위에 전/후면 전환 버튼을 둔다.
           if (session.role == Role.sender && session.connection.hasLocalVideo) ...[
             Positioned(
@@ -452,6 +467,12 @@ class _LiveStreamingViewState extends State<LiveStreamingView> {
             ),
           ],
         ],
+        if (widget.showMirrorButton)
+          Positioned(
+            right: 16,
+            bottom: 76,
+            child: _buildMirrorButton(),
+          ),
       ],
     );
   }
@@ -488,7 +509,7 @@ class _LiveStreamingViewState extends State<LiveStreamingView> {
         return DetectionOverlay(
           renderer: connection.remoteRenderer,
           detections: session.detections,
-          mirror: session.remoteIsFrontCamera,
+          mirror: session.mirror,
         );
       }
       return Container(
@@ -497,7 +518,7 @@ class _LiveStreamingViewState extends State<LiveStreamingView> {
         color: const Color(0xFF0E0E12),
         child: RTCVideoView(
           connection.remoteRenderer,
-          mirror: session.remoteIsFrontCamera,
+          mirror: session.mirror,
           objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
         ),
       );
@@ -510,7 +531,7 @@ class _LiveStreamingViewState extends State<LiveStreamingView> {
       child: connection.hasLocalVideo
           ? RTCVideoView(
               connection.localRenderer,
-              mirror: connection.isFrontCamera,
+              mirror: session.mirror,
               objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
             )
           : _buildWaitingPlaceholder(),
@@ -553,7 +574,7 @@ class _LiveStreamingViewState extends State<LiveStreamingView> {
       ),
       child: RTCVideoView(
         renderer,
-        mirror: showMyCamera ? connection.isFrontCamera : connection.remoteIsFrontCamera,
+        mirror: showMyCamera ? connection.isFrontCamera : session.mirror,
         objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
       ),
     );
@@ -574,6 +595,27 @@ class _LiveStreamingViewState extends State<LiveStreamingView> {
         child: const Icon(
           Icons.cameraswitch_rounded,
           color: Colors.white,
+          size: 24,
+        ),
+      ),
+    );
+  }
+
+  // 좌우반전 토글 버튼. 켜져 있으면 초록색으로 표시한다.
+  Widget _buildMirrorButton() {
+    return GestureDetector(
+      onTap: () => _session.toggleMirror(),
+      child: Container(
+        width: 48,
+        height: 48,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.45),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          Icons.flip,
+          color: _session.mirror ? const Color(0xFF30D158) : Colors.white,
           size: 24,
         ),
       ),

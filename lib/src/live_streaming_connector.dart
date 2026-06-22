@@ -69,8 +69,8 @@ class LiveStreamingConnector {
   /// 지금 전면 카메라를 쓰는지.
   bool isFrontCamera = true;
 
-  /// 상대가 전면 카메라를 쓰는지(상대 신호로 갱신). 전면이면 받은 영상이 좌우반전돼 와서 화면에서 되돌린다.
-  bool remoteIsFrontCamera = true;
+  /// 영상을 좌우반전해 보여줄지(수동 토글). 송신 측 버튼으로 정하고 상대에게 신호로 전달한다.
+  bool mirror = false;
 
   /// 수신한 상대 음성을 출력할지. false면 받은 오디오를 무음 처리한다.
   bool isRemoteAudioEnabled;
@@ -160,7 +160,7 @@ class LiveStreamingConnector {
       socket = await WebSocketTransformer.upgrade(request);
       socket!.listen(_handleMessage);
       await _sendOffer();
-      _sendCameraFacing();
+      _sendMirror();
     });
   }
 
@@ -175,8 +175,8 @@ class LiveStreamingConnector {
   Future<void> _handleMessage(dynamic raw) async {
     final Map<String, dynamic> message = jsonDecode(raw as String) as Map<String, dynamic>;
     final String? type = message["type"] as String?;
-    if (type == "camera") {
-      remoteIsFrontCamera = (message["front"] as bool?) ?? remoteIsFrontCamera;
+    if (type == "mirror") {
+      mirror = (message["on"] as bool?) ?? mirror;
       onUpdate();
       return;
     }
@@ -185,7 +185,7 @@ class LiveStreamingConnector {
     );
     if (type == "offer") {
       await _sendAnswer();
-      _sendCameraFacing();
+      _sendMirror();
     }
   }
 
@@ -214,7 +214,6 @@ class LiveStreamingConnector {
     if (videoTracks.isEmpty) return;
     await Helper.switchCamera(videoTracks.first);
     isFrontCamera = !isFrontCamera;
-    _sendCameraFacing();
     onUpdate();
   }
 
@@ -232,9 +231,16 @@ class LiveStreamingConnector {
     socket?.add(jsonEncode(message));
   }
 
-  // 내 카메라 방향(전/후면)을 상대에게 알린다. 상대는 이 값으로 전면 영상의 좌우반전을 되돌린다.
-  void _sendCameraFacing() {
-    _sendMessage({"type": "camera", "front": isFrontCamera});
+  // 수동 미러 상태를 상대에게 알린다. 받은 쪽은 표시 영상을 같은 방향으로 뒤집는다.
+  void _sendMirror() {
+    _sendMessage({"type": "mirror", "on": mirror});
+  }
+
+  // 미러를 켜고 끄고 상대에게 알린다.
+  void setMirror(bool on) {
+    mirror = on;
+    _sendMirror();
+    onUpdate();
   }
 
   // 같은 Wi-Fi에서 접속할 수 있는 내 IP(예: 192.168.x.x)를 찾는다.
@@ -269,7 +275,7 @@ class LiveStreamingConnector {
     remoteRenderer.srcObject = null;
     remoteVideoTrack = null;
     isConnected = false;
-    remoteIsFrontCamera = true;
+    mirror = false;
     onUpdate();
   }
 
