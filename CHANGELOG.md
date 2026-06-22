@@ -1,10 +1,24 @@
+## 0.7.0
+
+- `LiveStreamingController`가 영상 세션(WebRTC 연결·렌더러·YOLO 분석기)을 직접 소유하도록 변경. 같은 controller를 여러 `LiveStreamingView`에 넘기면 화면이 바뀌어도 같은 연결을 끊김 없이 이어서 그린다(예: 작은 카드에서 전체화면으로 전환).
+- `LiveStreamingView`는 controller가 있으면 그 세션을 그리기만 한다. controller를 넘기지 않으면 위젯이 내부 세션을 만들어 단독으로 동작하므로 기존 사용 방식은 그대로 호환된다.
+- 세션 설정(quality·enableSpeaker·enableDetection·model·customModelPath·detectionInterval·onDetected·onLocalIpReady·onError)을 `LiveStreamingController` 생성자로도 받는다.
+- `LiveStreamingController`에 `detections`·`isConnected`·`isStarted` 등 세션 상태 getter와 `prepare`·`start` 추가. 위젯 연결 여부에 의존하던 `isAttached`와 시작 보류(pending start) 동작은 제거.
+
+## 0.6.0
+
+- `LiveStreamingController`가 위젯에 연결되기 전 호출된 `startAsReceiver`/`startAsSender`를 연결 직후 자동 실행하도록 수정.
+
+## 0.5.0
+
+- 수신 음성 출력을 켜고 끄는 `enableSpeaker` 필드와 `LiveStreamingController.setSpeakerEnabled` 추가.
+
 ## 0.4.0
 
 - `LiveStreamingView`에 내장 컨트롤 UI를 끄는 `showControlPanel` 추가(끄면 영상+탐지 오버레이만 남는다).
 - 코드에서 시작/종료/카메라 전환을 제어하는 `LiveStreamingController` 추가.
 - 위젯이 뜨면 자동 연결하는 `autoStart`와 수신자용 `senderIp` 추가.
 - 탐지 결과를 외부로 받는 `onDetected` 콜백과 송신자 자기 IP를 받는 `onLocalIpReady` 콜백 추가.
-- 수신 음성 출력을 켜고 끄는 `enableSpeaker` 필드와 `LiveStreamingController.setSpeakerEnabled` 추가.
 - Dart 3.9.x에서 컴파일되도록 dot-shorthand 표기를 명시적 enum으로 전환.
 
 ## 0.3.0
