@@ -3,6 +3,7 @@
 Usage:
     pip install -r tool/requirements.txt
     python3 tool/train_dog_pose.py --epochs 100 --imgsz 640 --export both
+    python3 tool/train_dog_pose.py --weights best.pt --export tflite  # export only
 
 Outputs (pass one as `dogPoseModelPath`):
     Android: *_int8.tflite (TFLite export needs Linux, see ultralytics_yolo doc/models.md)
@@ -36,14 +37,19 @@ def main():
         default="both",
         help="tflite export is blocked on macOS Python 3.13+; coreml needs macOS",
     )
+    parser.add_argument("--weights", default=None, help="trained .pt to export without training")
     args = parser.parse_args()
 
     from ultralytics import YOLO
 
-    device = args.device or default_device()
-    model = YOLO(args.model)
-    model.train(data="dog-pose.yaml", epochs=args.epochs, imgsz=args.imgsz, device=device)
-    best = Path(model.trainer.best)
+    if args.weights:
+        best = Path(args.weights)
+    else:
+        device = args.device or default_device()
+        model = YOLO(args.model)
+        model.train(data="dog-pose.yaml", epochs=args.epochs, imgsz=args.imgsz, device=device)
+        best = Path(model.trainer.best)
+        print(f"Weights: {best}")
 
     # Mirrors ultralytics_yolo 0.6.1 official export settings (doc/models.md).
     if args.export in ("tflite", "both"):
