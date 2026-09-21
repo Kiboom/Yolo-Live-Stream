@@ -29,6 +29,7 @@ class ExampleHome extends StatefulWidget {
 
 class _ExampleHomeState extends State<ExampleHome> {
   Role role = Role.sender;
+  DogRiskLevel? riskLevel;
 
   @override
   Widget build(BuildContext context) {
@@ -48,8 +49,23 @@ class _ExampleHomeState extends State<ExampleHome> {
                 },
               ),
             ),
+            if (riskLevel != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text("Dog risk: ${riskLevel!.name}"),
+              ),
             Expanded(
-              child: LiveStreamingView(role: role),
+              // Pass a trained dog-pose model to enable posture checks:
+              // dogPoseModelPath: "assets/models/dog-pose.tflite" (iOS: .mlpackage.zip), see tool/train_dog_pose.py.
+              child: LiveStreamingView(
+                role: role,
+                enableGrowlDetection: true,
+                onDogRiskAnalyzed: (DogRiskReport report) {
+                  setState(() {
+                    riskLevel = report.level;
+                  });
+                },
+              ),
             ),
           ],
         ),
