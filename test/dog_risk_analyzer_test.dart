@@ -202,6 +202,14 @@ void main() {
       expect(analyze(points: points).isFacingPerson, isNull);
     });
 
+    test("정면 얼굴에서 귀 뿌리 하나만 보이면 null", () {
+      final points = Map.of(standingPoints)
+        ..removeWhere((index, _) => index == 15 || index == 20 || index == 21)
+        ..[14] = const Offset(175, 120)
+        ..[16] = const Offset(200, 125);
+      expect(analyze(points: points).isFacingPerson, isNull);
+    });
+
     test("정면을 봐서 머리 방향이 너무 짧으면 null", () {
       final frontalPoints = {
         ...standingPoints,
