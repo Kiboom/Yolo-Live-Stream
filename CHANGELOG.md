@@ -5,6 +5,8 @@
 - `DogRiskReport`, `DogRiskLevel`, `DogPosture`, `DogRiskThresholds` 공개.
 - 포즈 모델은 사용자가 직접 학습해 넘긴다. 학습 스크립트 `tool/train_dog_pose.py` 추가. 포즈 모델이 없으면 거리와 으르렁만으로 판정한다.
 - 으르렁 감지용 YAMNet 모델을 플러그인에 포함. 수신 기기에서 분석하며 스피커를 꺼도 동작한다.
+- README에 Android 빌드 안내 추가. `flutter_webrtc` 0.12.x의 compileSdk 31이 androidx 요구 버전(34 이상)보다 낮아 빌드가 실패하므로, 앱의 `android/build.gradle.kts`에서 compileSdk를 36으로 올리는 설정이 필요하다.
+- README에 iOS 빌드 안내 추가. `TensorFlowLiteSwift`와 `flutter_webrtc`가 SwiftPM을 지원하지 않아 iOS는 CocoaPods 전용이며, 앱 `pubspec.yaml`에 `enable-swift-package-manager: false`를 권장한다.
 
 ## 0.10.0
 

@@ -148,6 +148,28 @@ DetectionOverlay(renderer: connection.remoteRenderer, detections: analyzer.detec
 들어 있어 **앱 빌드 시 자동 병합**됩니다. 별도 작업이 필요 없습니다.
 (앱에서 별도 `networkSecurityConfig`를 지정하면 `usesCleartextTraffic`가 덮어써질 수 있습니다.)
 
+#### compileSdk 설정 (직접 추가 필요)
+
+`flutter_webrtc` 0.12.x는 compileSdk를 31로 고정합니다.
+그런데 함께 받는 androidx 라이브러리는 34 이상을 요구해서 빌드가 실패합니다.
+앱의 `android/build.gradle.kts`에 아래 블록을 추가해 `flutter_webrtc`의 compileSdk를 36으로 올려 주세요.
+이 블록은 `project.evaluationDependsOn(":app")`이 들어 있는 `subprojects` 블록보다 앞에 넣어야 합니다.
+(`example/android/build.gradle.kts` 참고)
+
+```kotlin
+// flutter_webrtc 0.12.x pins compileSdk 31, but its androidx dependencies need 34+ (checkAarMetadata fails).
+subprojects {
+    if (name == "flutter_webrtc") {
+        afterEvaluate {
+            extensions.configure<com.android.build.api.dsl.LibraryExtension> { compileSdk = 36 }
+        }
+    }
+}
+subprojects {
+    project.evaluationDependsOn(":app")
+}
+```
+
 ### iOS — 직접 추가 필요
 
 iOS는 Pod이 앱의 `Info.plist`를 자동으로 수정할 수 없습니다. 플러그인을 쓰는 앱의
@@ -165,6 +187,19 @@ iOS는 Pod이 앱의 `Info.plist`를 자동으로 수정할 수 없습니다. �
     <key>NSAllowsLocalNetworking</key>
     <true/>
 </dict>
+```
+
+#### CocoaPods 사용 (SwiftPM 끄기 권장)
+
+이 플러그인의 iOS 부분은 CocoaPods에서만 동작합니다.
+의존하는 `TensorFlowLiteSwift`와 `flutter_webrtc`가 SwiftPM을 지원하지 않기 때문입니다.
+앱의 `pubspec.yaml`에서 SwiftPM을 꺼 두는 것을 권장합니다.
+(`example/pubspec.yaml` 참고)
+
+```yaml
+flutter:
+  config:
+    enable-swift-package-manager: false
 ```
 
 ## 동작 방법
