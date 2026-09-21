@@ -30,4 +30,7 @@ flutter:
       ios:
         pluginClass: YoloLiveStreamPlugin
 
+  assets:
+    - assets/yamnet.tflite
+
   uses-material-design: true
