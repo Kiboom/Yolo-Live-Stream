@@ -25,6 +25,7 @@ class LiveStreamingConnector {
     this.quality = VideoQuality.hd720,
     this.frameRate = 30,
     this.isRemoteAudioEnabled = true,
+    this.isGrowlDetectionEnabled = false,
   });
 
   /// 카메라 해상도.
@@ -74,6 +75,12 @@ class LiveStreamingConnector {
 
   /// 수신한 상대 음성을 출력할지. false면 받은 오디오를 무음 처리한다.
   bool isRemoteAudioEnabled;
+
+  /// 으르렁 감지를 켰는지. 켜면 스피커를 꺼도 수신 오디오 트랙을 끄지 않는다.
+  /// 트랙을 끄면 네이티브 가로채기 지점에 무음이 들어오므로, 스피커 음소거는 GrowlAnalyzer가 분석 뒤 버퍼를 지우는 방식으로 한다.
+  final bool isGrowlDetectionEnabled;
+
+  bool get _isRemoteAudioTrackEnabled => isRemoteAudioEnabled || isGrowlDetectionEnabled;
 
   /// 분석에 쓰는 상대 영상 트랙(onTrack에서 받음).
   MediaStreamTrack? remoteVideoTrack;
@@ -146,7 +153,7 @@ class LiveStreamingConnector {
       if (event.track.kind == "video") {
         remoteVideoTrack = event.track; // 분석용 트랙은 onTrack에서 직접 받는다(원격 스트림은 getVideoTracks가 비어 있을 수 있음)
       } else if (event.track.kind == "audio") {
-        event.track.enabled = isRemoteAudioEnabled; // 수신 음성 출력 설정을 새 오디오 트랙에 적용
+        event.track.enabled = _isRemoteAudioTrackEnabled; // 수신 음성 출력 설정을 새 오디오 트랙에 적용
       }
       onUpdate();
     };
@@ -225,7 +232,7 @@ class LiveStreamingConnector {
   void setRemoteAudioEnabled(bool enabled) {
     isRemoteAudioEnabled = enabled;
     for (final MediaStreamTrack track in remoteRenderer.srcObject?.getAudioTracks() ?? []) {
-      track.enabled = enabled;
+      track.enabled = _isRemoteAudioTrackEnabled;
     }
     onUpdate();
   }

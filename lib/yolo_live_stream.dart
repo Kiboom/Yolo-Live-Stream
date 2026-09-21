@@ -5,6 +5,7 @@
 library;
 
 export "src/detection_overlay.dart";
+export "src/dog_risk_analyzer.dart";
 export "src/live_streaming_connector.dart";
 export "src/live_streaming_view.dart";
 export "src/role.dart";
