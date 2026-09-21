@@ -237,12 +237,14 @@ flutter:
 
 | 조건 | 위험도 |
 | --- | --- |
-| 가까움 + (으르렁 또는 긴장 신호) | `high` |
+| 가까움 + (으르렁 또는 (사람 쪽을 봄 + 긴장 신호)) | `high` |
 | 가까움, 또는 거리와 상관없이 으르렁 | `caution` |
 | 그 밖 | `low` |
 
 "가까움"은 `distance`가 `nearDistance`보다 작은 경우입니다.
 "으르렁"은 `growlScore`가 `growlScore` 임계값 이상인 경우입니다.
+"긴장 신호"는 꼬리가 들렸거나 머리를 낮추고 앞으로 쏠린 경우입니다.
+긴장 신호는 강아지가 가까이 있으면서 사람 쪽을 볼 때만 위험도를 올립니다.
 
 ### 포즈 모델이 없을 때
 
@@ -276,16 +278,25 @@ Ultralytics는 학습된 dog-pose 가중치를 공개하지 않습니다.
 학습 스크립트는 `tool/train_dog_pose.py`에 있으며, [dog-pose 데이터셋](https://docs.ultralytics.com/datasets/pose/dog-pose)으로 `yolo26n-pose`를 학습합니다.
 
 ```bash
-pip install -r tool/requirements.txt
-python3 tool/train_dog_pose.py --epochs 100 --imgsz 640
+pip install ultralytics
+python3 tool/train_dog_pose.py --epochs 100 --imgsz 640 --model yolo26n-pose.pt
 ```
 
-1. 데이터셋은 첫 실행 때 자동으로 내려받습니다.
+1. 데이터셋은 첫 실행 때 ultralytics가 자동으로 내려받습니다.
 2. 학습이 끝나면 Android용 `.tflite`와 iOS용 `.mlpackage.zip`을 내보냅니다.
 3. 두 파일을 앱의 `assets/models/`에 넣고, 플랫폼에 맞는 경로를 `dogPoseModelPath`로 넘깁니다.
 
-장치는 CUDA, MPS, CPU 순서로 자동 선택합니다.
+장치는 CUDA, MPS, CPU 순서로 자동 선택하며, `--device`로 직접 지정할 수 있습니다.
 CPU로 학습하면 매우 오래 걸리므로 GPU를 권장합니다.
+TFLite 내보내기는 macOS의 Python 3.13 이상에서 막힙니다.
+그래서 Linux(예: Colab)나 Python 3.12 이하에서 내보내기를 권장합니다.
+
+내보내기 설정은 `ultralytics_yolo` 패키지의 공식 모델과 같습니다.
+
+| 플랫폼 | 형식 | 설정 |
+| --- | --- | --- |
+| Android | `.tflite` | `int8=True`, `nms=False`, `end2end=False` |
+| iOS | `.mlpackage.zip` | `int8=True`, `nms=False`, `end2end=True` |
 
 ### 으르렁 감지
 
