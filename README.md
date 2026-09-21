@@ -142,7 +142,7 @@ DetectionOverlay(renderer: connection.remoteRenderer, detections: analyzer.detec
 
 ## 권한 설정
 
-### Android — 자동
+### Android
 
 권한(`INTERNET`, `CAMERA`, `RECORD_AUDIO`), 카메라 기능, `usesCleartextTraffic`는 플러그인 매니페스트에
 들어 있어 **앱 빌드 시 자동 병합**됩니다. 별도 작업이 필요 없습니다.
@@ -170,7 +170,7 @@ subprojects {
 }
 ```
 
-### iOS — 직접 추가 필요
+### iOS
 
 iOS는 Pod이 앱의 `Info.plist`를 자동으로 수정할 수 없습니다. 플러그인을 쓰는 앱의
 `ios/Runner/Info.plist`에 아래 키를 **직접 추가**하세요. (`example/ios/Runner/Info.plist` 참고)
