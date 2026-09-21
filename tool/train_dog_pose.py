@@ -2,7 +2,7 @@
 
 Usage:
     pip install -r tool/requirements.txt
-    python3 tool/train_dog_pose.py --epochs 100 --imgsz 640
+    python3 tool/train_dog_pose.py --epochs 100 --imgsz 640 --export both
 
 Outputs (pass one as `dogPoseModelPath`):
     Android: *_int8.tflite (TFLite export needs Linux, see ultralytics_yolo doc/models.md)
@@ -30,6 +30,12 @@ def main():
     parser.add_argument("--imgsz", type=int, default=640)
     parser.add_argument("--device", default=None, help="cuda index, mps or cpu (default: auto)")
     parser.add_argument("--model", default="yolo26n-pose.pt")
+    parser.add_argument(
+        "--export",
+        choices=["tflite", "coreml", "both"],
+        default="both",
+        help="tflite export is blocked on macOS Python 3.13+; coreml needs macOS",
+    )
     args = parser.parse_args()
 
     from ultralytics import YOLO
@@ -40,13 +46,14 @@ def main():
     best = Path(model.trainer.best)
 
     # Mirrors ultralytics_yolo 0.6.1 official export settings (doc/models.md).
-    trained = YOLO(best)
-    tflite = trained.export(format="tflite", imgsz=args.imgsz, int8=True, nms=False, end2end=False, data="dog-pose.yaml")
-    print(f"Android: {tflite}")
+    if args.export in ("tflite", "both"):
+        tflite = YOLO(best).export(format="tflite", imgsz=args.imgsz, int8=True, nms=False, end2end=False, data="dog-pose.yaml")
+        print(f"Android: {tflite}")
 
-    mlpackage = YOLO(best).export(format="coreml", imgsz=args.imgsz, int8=True, nms=False, end2end=True)
-    archive = shutil.make_archive(str(mlpackage), "zip", root_dir=Path(mlpackage).parent, base_dir=Path(mlpackage).name)
-    print(f"iOS: {archive}")
+    if args.export in ("coreml", "both"):
+        mlpackage = YOLO(best).export(format="coreml", imgsz=args.imgsz, int8=True, nms=False, end2end=True)
+        archive = shutil.make_archive(str(mlpackage), "zip", root_dir=Path(mlpackage).parent, base_dir=Path(mlpackage).name)
+        print(f"iOS: {archive}")
 
 
 if __name__ == "__main__":

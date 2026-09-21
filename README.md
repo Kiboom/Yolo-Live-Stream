@@ -278,18 +278,18 @@ Ultralytics는 학습된 dog-pose 가중치를 공개하지 않습니다.
 학습 스크립트는 `tool/train_dog_pose.py`에 있으며, [dog-pose 데이터셋](https://docs.ultralytics.com/datasets/pose/dog-pose)으로 `yolo26n-pose`를 학습합니다.
 
 ```bash
-pip install ultralytics
-python3 tool/train_dog_pose.py --epochs 100 --imgsz 640 --model yolo26n-pose.pt
+pip install -r tool/requirements.txt
+python3 tool/train_dog_pose.py --epochs 100 --imgsz 640 --model yolo26n-pose.pt --export both
 ```
 
 1. 데이터셋은 첫 실행 때 ultralytics가 자동으로 내려받습니다.
-2. 학습이 끝나면 Android용 `.tflite`와 iOS용 `.mlpackage.zip`을 내보냅니다.
+2. 학습이 끝나면 `--export` 값에 따라 모델을 내보냅니다. `tflite`는 Android용 `.tflite`, `coreml`은 iOS용 `.mlpackage.zip`, `both`(기본값)는 둘 다 내보냅니다.
 3. 두 파일을 앱의 `assets/models/`에 넣고, 플랫폼에 맞는 경로를 `dogPoseModelPath`로 넘깁니다.
 
 장치는 CUDA, MPS, CPU 순서로 자동 선택하며, `--device`로 직접 지정할 수 있습니다.
 CPU로 학습하면 매우 오래 걸리므로 GPU를 권장합니다.
-TFLite 내보내기는 macOS의 Python 3.13 이상에서 막힙니다.
-그래서 Linux(예: Colab)나 Python 3.12 이하에서 내보내기를 권장합니다.
+TFLite 내보내기는 macOS의 Python 3.13 이상에서 막히고, Core ML 내보내기는 macOS에서만 됩니다.
+그래서 macOS에서는 `--export coreml`, Linux(예: Colab)에서는 `--export tflite`로 실행하는 것을 권장합니다.
 
 내보내기 설정은 `ultralytics_yolo` 패키지의 공식 모델과 같습니다.
 
