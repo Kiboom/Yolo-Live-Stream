@@ -1,5 +1,6 @@
 import "dart:async";
-import "dart:typed_data";
+
+import "package:flutter/foundation.dart";
 
 import "package:flutter_webrtc/flutter_webrtc.dart";
 import "package:ultralytics_yolo/ultralytics_yolo.dart";
@@ -59,6 +60,7 @@ class YoloAnalyzer {
   late final YOLO? _dogPoseYolo = dogPoseModelPath == null ? null : YOLO(modelPath: dogPoseModelPath ?? "", task: YOLOTask.pose);
   bool _isModelLoaded = false;
   bool _isBusy = false;
+  int _generation = 0; // stop()마다 올려, 멈추기 전에 시작한 분석의 늦은 결과를 버린다
   Timer? _timer;
   List<YOLOResult> detections = [];
 
@@ -77,10 +79,12 @@ class YoloAnalyzer {
       debugStatus = "모델 로드 완료";
       onUpdate();
     }
-    _timer ??= Timer.periodic(interval, (_) => _analyzeFrame());
+    _timer ??= Timer.periodic(interval, (_) => analyzeFrame());
   }
 
-  Future<void> _analyzeFrame() async {
+  /// 프레임 하나를 캡처해 분석한다. 보통은 [start]의 타이머가 부르고, 테스트는 직접 부른다.
+  @visibleForTesting
+  Future<void> analyzeFrame() async {
     final MediaStreamTrack? track = getRemoteTrack();
     if (_isBusy) return;
     if (track == null) {
@@ -89,28 +93,37 @@ class YoloAnalyzer {
       return;
     }
     _isBusy = true;
+    final int generation = _generation;
     try {
       final Uint8List frame = (await track.captureFrame()).asUint8List();
+      if (generation != _generation) return;
       final Map<String, dynamic> result = await _yolo.predict(frame);
+      if (generation != _generation) return;
       final List<dynamic> rawDetections = (result["detections"] as List?) ?? [];
-      detections = rawDetections.map((item) => YOLOResult.fromMap(item as Map)).toList();
-      dogPoses = await _predictDogPoses(frame);
+      final List<YOLOResult> frameDetections = rawDetections.map((item) => YOLOResult.fromMap(item as Map)).toList();
+      final List<YOLOResult>? frameDogPoses = await _predictDogPoses(frame, frameDetections);
+      if (generation != _generation) return;
+      detections = frameDetections;
+      dogPoses = frameDogPoses;
       onDetected?.call(detections);
       debugStatus = "프레임 ${frame.length ~/ 1024}KB, 탐지 ${detections.length}개";
       onUpdate();
     } catch (error) {
+      if (generation != _generation) return;
       debugStatus = "분석 오류: $error";
       onUpdate();
     } finally {
-      _isBusy = false;
+      if (generation == _generation) {
+        _isBusy = false;
+      }
     }
   }
 
   // 강아지가 있는 프레임에만 포즈 모델을 돌려 기기 부담을 줄인다.
-  Future<List<YOLOResult>?> _predictDogPoses(Uint8List frame) async {
+  Future<List<YOLOResult>?> _predictDogPoses(Uint8List frame, List<YOLOResult> frameDetections) async {
     final YOLO? dogPoseYolo = _dogPoseYolo;
     if (dogPoseYolo == null) return null;
-    if (!detections.any((YOLOResult detection) => detection.className == "dog")) return [];
+    if (!frameDetections.any((YOLOResult detection) => detection.className == "dog")) return [];
     final Map<String, dynamic> result = await dogPoseYolo.predict(frame);
     final List<dynamic> rawPoses = (result["detections"] as List?) ?? [];
     return rawPoses.map((item) => YOLOResult.fromMap(item as Map)).toList();
@@ -120,6 +133,7 @@ class YoloAnalyzer {
   void stop() {
     _timer?.cancel();
     _timer = null;
+    _generation++;
     _isBusy = false; // in-flight 분석이 트랙 폐기로 안 끝나도 재연결 시 멈추지 않도록 리셋
 
     detections = [];

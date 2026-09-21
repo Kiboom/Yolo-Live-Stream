@@ -185,12 +185,15 @@ class LiveStreamingController extends ChangeNotifier {
     await prepare();
     _isStarted = true;
     _notify();
+    connection.isGrowlDetectionEnabled = enableGrowlDetection;
     final bool ok = await connection.startAsReceiver(senderIp.trim());
     if (!ok) {
       _isStarted = false;
       _notify();
       return;
     }
+    // 오디오 트랙은 SDP 교환 뒤에 도착하므로, YOLO 로드를 기다리지 않고 먼저 걸어야 트랙이 켜지기 전에 음소거가 적용된다.
+    await startGrowlDetection();
     if (_analyzer != null) {
       try {
         await _analyzer!.start();
@@ -198,9 +201,16 @@ class LiveStreamingController extends ChangeNotifier {
         onError?.call("YOLO 모델 로드 실패: $error");
       }
     }
+  }
+
+  /// 으르렁 분석을 시작한다. 실패하면 수신 오디오 트랙을 스피커 설정대로 되돌린다.
+  @visibleForTesting
+  Future<void> startGrowlDetection() async {
     try {
       await _growlAnalyzer?.start(muteOutput: !isSpeakerEnabled);
     } catch (error) {
+      connection.isGrowlDetectionEnabled = false;
+      connection.setRemoteAudioEnabled(isSpeakerEnabled);
       onError?.call("으르렁 감지 시작 실패: $error");
     }
   }
@@ -230,7 +240,9 @@ class LiveStreamingController extends ChangeNotifier {
   /// 수신한 상대 음성의 출력을 켜고 끈다.
   void setSpeakerEnabled(bool enabled) {
     connection.setRemoteAudioEnabled(enabled);
-    _growlAnalyzer?.setOutputMuted(!enabled);
+    if (connection.isGrowlDetectionEnabled) {
+      _growlAnalyzer?.setOutputMuted(!enabled);
+    }
   }
 
   void _notify() {
