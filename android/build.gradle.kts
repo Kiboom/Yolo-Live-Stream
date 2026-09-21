@@ -72,6 +72,10 @@ kotlin {
 }
 
 dependencies {
+    // Same LiteRT as ultralytics_yolo so the two plugins don't ship conflicting TFLite runtimes.
+    implementation("com.google.ai.edge.litert:litert:2.1.5")
+    compileOnly(project(":flutter_webrtc"))
+    compileOnly("io.github.webrtc-sdk:android:125.6422.03")
     testImplementation("org.jetbrains.kotlin:kotlin-test")
     testImplementation("org.mockito:mockito-core:5.0.0")
 }
