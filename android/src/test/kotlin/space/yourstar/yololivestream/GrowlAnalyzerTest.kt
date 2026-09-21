@@ -74,4 +74,26 @@ internal class GrowlAnalyzerTest {
         window.clear()
         assertFalse(window.append(FloatArray(YAMNET_HOP_SAMPLES), YAMNET_HOP_SAMPLES))
     }
+
+    @Test
+    fun session_dropsResultsFromSessionStoppedAndRestarted() {
+        val session = GrowlSession()
+        session.begin()
+        val staleId = session.id()
+        session.end()
+        session.begin()
+
+        assertFalse(session.isCurrent(staleId))
+        assertTrue(session.isCurrent(session.id()))
+    }
+
+    @Test
+    fun session_dropsResultsAfterStop() {
+        val session = GrowlSession()
+        session.begin()
+        val id = session.id()
+        session.end()
+
+        assertFalse(session.isCurrent(id))
+    }
 }

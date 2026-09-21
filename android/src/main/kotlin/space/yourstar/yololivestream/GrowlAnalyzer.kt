@@ -18,6 +18,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 internal const val YAMNET_SAMPLE_RATE = 16000
 internal const val YAMNET_WINDOW_SAMPLES = 15600
@@ -82,6 +83,27 @@ internal class GrowlSampleWindow {
     }
 }
 
+/** Tags work with the start/stop session it came from so late results from a stopped session are dropped. */
+internal class GrowlSession {
+    private val current = AtomicInteger(0)
+    @Volatile var active = false
+        private set
+
+    fun begin(): Int {
+        active = true
+        return current.incrementAndGet()
+    }
+
+    fun end() {
+        active = false
+        current.incrementAndGet()
+    }
+
+    fun id(): Int = current.get()
+
+    fun isCurrent(id: Int): Boolean = active && id == current.get()
+}
+
 class GrowlAnalyzer(private val context: Context, messenger: BinaryMessenger) :
     MethodChannel.MethodCallHandler,
     EventChannel.StreamHandler,
@@ -97,7 +119,7 @@ class GrowlAnalyzer(private val context: Context, messenger: BinaryMessenger) :
     private var attachedAdapter: AudioProcessingAdapter? = null
 
     @Volatile private var outputMuted = false
-    @Volatile private var running = false
+    private val session = GrowlSession()
 
     // Touched only on the WebRTC audio thread.
     private val window = GrowlSampleWindow()
@@ -124,7 +146,7 @@ class GrowlAnalyzer(private val context: Context, messenger: BinaryMessenger) :
                 }
                 outputMuted = call.argument<Boolean>("muteOutput") ?: false
                 if (attachedAdapter == null) {
-                    running = true
+                    session.begin()
                     adapter.addProcessor(this)
                     attachedAdapter = adapter
                 }
@@ -156,7 +178,7 @@ class GrowlAnalyzer(private val context: Context, messenger: BinaryMessenger) :
 
     // libwebrtc passes channel 0 of the full-band render AudioBuffer: numFrames native-order floats in FloatS16 range.
     override fun process(numBands: Int, numFrames: Int, buffer: ByteBuffer) {
-        if (!running) return
+        if (!session.active) return
         val floats = buffer.order(ByteOrder.nativeOrder()).asFloatBuffer()
         val count = minOf(numFrames, floats.remaining())
         if (frameScratch.size < count) frameScratch = FloatArray(count)
@@ -168,11 +190,12 @@ class GrowlAnalyzer(private val context: Context, messenger: BinaryMessenger) :
         val written = resampleTo16k(frameScratch, count, resampled)
         if (window.append(resampled, written) && inferenceBusy.compareAndSet(false, true)) {
             val input = window.snapshot()
-            inferenceExecutor.execute { runInference(input) }
+            val sessionId = session.id()
+            inferenceExecutor.execute { runInference(input, sessionId) }
         }
     }
 
-    private fun runInference(input: FloatArray) {
+    private fun runInference(input: FloatArray, sessionId: Int) {
         try {
             val compiled = model ?: loadModel()
             val inputs = inputBuffers!!
@@ -180,7 +203,7 @@ class GrowlAnalyzer(private val context: Context, messenger: BinaryMessenger) :
             inputs[0].writeFloat(input)
             compiled.run(inputs, outputs)
             val score = outputs[0].readFloat()[YAMNET_GROWLING_INDEX].toDouble()
-            mainHandler.post { if (running) eventSink?.success(score) }
+            mainHandler.post { if (session.isCurrent(sessionId)) eventSink?.success(score) }
         } catch (e: Throwable) {
             Log.w(TAG, "YAMNet inference failed: ${e.message}")
         } finally {
@@ -199,7 +222,7 @@ class GrowlAnalyzer(private val context: Context, messenger: BinaryMessenger) :
     }
 
     private fun detach() {
-        running = false
+        session.end()
         outputMuted = false
         attachedAdapter?.removeProcessor(this)
         attachedAdapter = null
