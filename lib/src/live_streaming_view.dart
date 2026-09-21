@@ -139,7 +139,7 @@ class LiveStreamingController extends ChangeNotifier {
     if (enableDetection) {
       _analyzer = YoloAnalyzer(
         onUpdate: _notify,
-        onDetected: _handleDetected,
+        onDetected: handleDetected,
         getRemoteTrack: () => connection.remoteVideoTrack,
         model: model,
         customModelPath: customModelPath,
@@ -153,7 +153,9 @@ class LiveStreamingController extends ChangeNotifier {
     _ready = true;
   }
 
-  void _handleDetected(List<YOLOResult> detections) {
+  /// 분석기가 프레임 하나를 분석할 때마다 부른다. 테스트는 모델 없이 이 경로를 직접 호출한다.
+  @visibleForTesting
+  void handleDetected(List<YOLOResult> detections) {
     onDetected?.call(detections);
     final DogRiskReport report = DogRiskAnalyzer(thresholds: dogRiskThresholds).analyze(
       detections: detections,
@@ -583,6 +585,8 @@ class _LiveStreamingViewState extends State<LiveStreamingView> {
           renderer: connection.remoteRenderer,
           detections: session.detections,
           mirror: session.mirror,
+          dogPoses: session.dogPoses ?? const [],
+          dogRiskReport: session.dogRiskReport,
         );
       }
       return Container(

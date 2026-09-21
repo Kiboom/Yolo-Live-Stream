@@ -1,5 +1,6 @@
 import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
+import "package:ultralytics_yolo/ultralytics_yolo.dart";
 import "package:yolo_live_stream/yolo_live_stream.dart";
 
 void main() {
@@ -38,5 +39,31 @@ void main() {
     expect(controller.isSpeakerEnabled, false);
     expect(controller.connection.isGrowlDetectionEnabled, false);
     expect(growlCalls, isEmpty);
+  });
+  test("calls onDogRiskAnalyzed with a report when a person and a dog are detected", () async {
+    final List<DogRiskReport> reports = [];
+    final LiveStreamingController controller = LiveStreamingController(
+      onDogRiskAnalyzed: reports.add,
+    );
+    await controller.prepare();
+    controller.handleDetected([
+      YOLOResult(
+        classIndex: 0,
+        className: "person",
+        confidence: 0.9,
+        boundingBox: const Rect.fromLTRB(0, 0, 100, 200),
+        normalizedBox: const Rect.fromLTRB(0.1, 0.2, 0.3, 0.8),
+      ),
+      YOLOResult(
+        classIndex: 16,
+        className: "dog",
+        confidence: 0.9,
+        boundingBox: const Rect.fromLTRB(120, 100, 220, 200),
+        normalizedBox: const Rect.fromLTRB(0.35, 0.5, 0.55, 0.8),
+      ),
+    ]);
+    expect(reports, hasLength(1));
+    expect(controller.dogRiskReport, same(reports.single));
+    expect(reports.single.distance, isNotNull);
   });
 }
