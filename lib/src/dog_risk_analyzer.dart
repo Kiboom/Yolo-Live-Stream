@@ -91,13 +91,13 @@ class DogRiskAnalyzer {
       }
     }
     // 사람이 없으면 거리 기준이 없으니 화면에서 가장 큰 강아지의 자세를 본다.
-    dog ??= dogs.isEmpty
-        ? null
-        : dogs.reduce((a, b) => _boxArea(a.boundingBox) >= _boxArea(b.boundingBox) ? a : b);
+    dog ??= dogs.isEmpty ? null : dogs.reduce((a, b) => _boxArea(a.boundingBox) >= _boxArea(b.boundingBox) ? a : b);
 
     final pose = dog == null || dogPoses == null ? null : _matchingPose(dog.boundingBox, dogPoses);
     final posture = dog == null || dogPoses == null ? null : pose?.posture ?? DogPosture.unknown;
-    final isFacingPerson = person == null ? null : pose?.isFacing(person.boundingBox.center, thresholds.facingAngleDegrees);
+    final isFacingPerson = person == null
+        ? null
+        : pose?.isFacing(person.boundingBox.center, thresholds.facingAngleDegrees);
     final isTailRaised = pose?.isTailRaised;
     final isHeadLoweredForward = pose?.isHeadLoweredForward;
 
@@ -275,7 +275,8 @@ class _DogPose {
     final headDirection = _headDirection;
     final frontPaw = _meanPoint(_frontPaws);
     if (nose == null || withers == null || headDirection == null || frontPaw == null) return null;
-    return nose.dy > withers.dy && _dot(frontPaw - _box.center, headDirection) > 0;
+    // 머리를 숙이면 머리 방향이 아래를 향해 발이 늘 "앞"으로 잡히므로, 가로 성분만 비교한다.
+    return nose.dy > withers.dy && (frontPaw.dx - _box.center.dx) * headDirection.dx > 0;
   }
 
   /// 보이는 다리가 모두 수직으로 펴졌는지. 보이는 다리가 없으면 null.
