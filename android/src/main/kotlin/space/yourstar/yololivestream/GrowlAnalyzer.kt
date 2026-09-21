@@ -145,12 +145,25 @@ class GrowlAnalyzer(private val context: Context, messenger: BinaryMessenger) :
                     return
                 }
                 outputMuted = call.argument<Boolean>("muteOutput") ?: false
-                if (attachedAdapter == null) {
-                    session.begin()
-                    adapter.addProcessor(this)
-                    attachedAdapter = adapter
+                if (attachedAdapter != null) {
+                    result.success(null)
+                    return
                 }
-                result.success(null)
+                // Attach (and mute) before the model loads so no remote audio leaks to the speaker meanwhile.
+                val sessionId = session.begin()
+                adapter.addProcessor(this)
+                attachedAdapter = adapter
+                inferenceExecutor.execute {
+                    val error = runCatching { model ?: loadModel() }.exceptionOrNull()
+                    mainHandler.post {
+                        if (error == null) {
+                            result.success(null)
+                            return@post
+                        }
+                        if (session.isCurrent(sessionId)) detach()
+                        result.error("MODEL_LOAD_FAILED", error.message, null)
+                    }
+                }
             }
             "setOutputMuted" -> {
                 outputMuted = call.argument<Boolean>("muted") ?: false
@@ -197,7 +210,7 @@ class GrowlAnalyzer(private val context: Context, messenger: BinaryMessenger) :
 
     private fun runInference(input: FloatArray, sessionId: Int) {
         try {
-            val compiled = model ?: loadModel()
+            val compiled = model ?: return
             val inputs = inputBuffers!!
             val outputs = outputBuffers!!
             inputs[0].writeFloat(input)
