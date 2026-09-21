@@ -185,6 +185,8 @@ const double _lyingElbowHeightRatio = 0.08;
 // 엎드림: 발에서 withers까지 높이 ÷ withers에서 tail_start까지 몸길이.
 const double _lyingBodyHeightRatio = 0.6;
 const double _minHeadDirectionRatio = 0.05;
+// 귀 뿌리나 눈 하나만 보일 때 코까지 가로 거리가 크기 × 이 값 이상이어야 옆모습으로 본다.
+const double _minSideHeadLengthRatio = 0.07;
 // 수평에 가까운 꼬리에서 값이 흔들리지 않도록 tail_end가 이만큼 더 높아야 꼬리 올림으로 본다.
 const double _tailRaisedMarginRatio = 0.05;
 
@@ -248,17 +250,17 @@ class _DogPose {
   /// 머리 기준점(두 귀 뿌리, 두 눈, 귀 뿌리 하나, 눈 하나 순)에서 코로 향하는 벡터. 정면을 봐서 너무 짧으면 null.
   Offset? get _headDirection {
     final nose = _points[_nose];
-    // 옆모습에서는 반대편 귀와 눈이 가려지므로 보이는 한쪽이라도 쓴다.
-    final headBase =
-        _midpoint(_leftEarBase, _rightEarBase) ??
-        _midpoint(_leftEye, _rightEye) ??
-        _points[_leftEarBase] ??
-        _points[_rightEarBase] ??
-        _points[_leftEye] ??
-        _points[_rightEye];
-    if (nose == null || headBase == null) return null;
-    final direction = nose - headBase;
-    return direction.distance < _minHeadDirectionRatio * _size ? null : direction;
+    if (nose == null) return null;
+    final pairBase = _midpoint(_leftEarBase, _rightEarBase) ?? _midpoint(_leftEye, _rightEye);
+    if (pairBase != null) {
+      final direction = nose - pairBase;
+      return direction.distance < _minHeadDirectionRatio * _size ? null : direction;
+    }
+    // 옆모습에서는 반대편 귀와 눈이 가려지므로 보이는 한쪽을 쓴다.
+    // 정면에서도 한쪽만 보일 수 있어, 코와 가로로 충분히 떨어진 옆모습일 때만 판정한다.
+    final singleBase = _points[_leftEarBase] ?? _points[_rightEarBase] ?? _points[_leftEye] ?? _points[_rightEye];
+    if (singleBase == null || (nose.dx - singleBase.dx).abs() < _minSideHeadLengthRatio * _size) return null;
+    return nose - singleBase;
   }
 
   bool? isFacing(Offset target, double maxAngleDegrees) {
