@@ -185,6 +185,8 @@ const double _lyingElbowHeightRatio = 0.08;
 // 엎드림: 발에서 withers까지 높이 ÷ withers에서 tail_start까지 몸길이.
 const double _lyingBodyHeightRatio = 0.6;
 const double _minHeadDirectionRatio = 0.05;
+// 수평에 가까운 꼬리에서 값이 흔들리지 않도록 tail_end가 이만큼 더 높아야 꼬리 올림으로 본다.
+const double _tailRaisedMarginRatio = 0.05;
 
 /// 신뢰도 기준을 넘은 키포인트만 담은 강아지 포즈. 없는 키포인트는 null.
 class _DogPose {
@@ -243,10 +245,17 @@ class _DogPose {
     return isBodyLow && areElbowsDown;
   }
 
-  /// 귀 뿌리(없으면 눈) 가운데에서 코로 향하는 벡터. 정면을 봐서 너무 짧으면 null.
+  /// 머리 기준점(두 귀 뿌리, 두 눈, 귀 뿌리 하나, 눈 하나 순)에서 코로 향하는 벡터. 정면을 봐서 너무 짧으면 null.
   Offset? get _headDirection {
     final nose = _points[_nose];
-    final headBase = _midpoint(_leftEarBase, _rightEarBase) ?? _midpoint(_leftEye, _rightEye);
+    // 옆모습에서는 반대편 귀와 눈이 가려지므로 보이는 한쪽이라도 쓴다.
+    final headBase =
+        _midpoint(_leftEarBase, _rightEarBase) ??
+        _midpoint(_leftEye, _rightEye) ??
+        _points[_leftEarBase] ??
+        _points[_rightEarBase] ??
+        _points[_leftEye] ??
+        _points[_rightEye];
     if (nose == null || headBase == null) return null;
     final direction = nose - headBase;
     return direction.distance < _minHeadDirectionRatio * _size ? null : direction;
@@ -266,7 +275,7 @@ class _DogPose {
     final tailStart = _points[_tailStart];
     final tailEnd = _points[_tailEnd];
     if (tailStart == null || tailEnd == null) return null;
-    return tailEnd.dy < tailStart.dy;
+    return tailStart.dy - tailEnd.dy > _tailRaisedMarginRatio * _size;
   }
 
   bool? get isHeadLoweredForward {

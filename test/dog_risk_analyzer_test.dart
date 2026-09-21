@@ -185,6 +185,15 @@ void main() {
       expect(analyze(points: points).isFacingPerson, isTrue);
     });
 
+    test("옆모습에서 귀 뿌리와 눈이 한쪽씩만 보여도 판정한다", () {
+      final points = Map.of(standingPoints)
+        ..remove(15)
+        ..remove(21);
+      expect(analyze(points: points).isFacingPerson, isTrue);
+      points.remove(14);
+      expect(analyze(points: points).isFacingPerson, isTrue);
+    });
+
     test("정면을 봐서 머리 방향이 너무 짧으면 null", () {
       final frontalPoints = {
         ...standingPoints,
@@ -209,6 +218,10 @@ void main() {
 
     test("tail_end가 tail_start보다 위면 꼬리 올림", () {
       expect(analyze(points: {...standingPoints, 13: const Offset(110, 110)}).isTailRaised, isTrue);
+    });
+
+    test("tail_end가 여유값 이내로만 높으면 수평 꼬리로 보고 false", () {
+      expect(analyze(points: {...standingPoints, 13: const Offset(100, 145)}).isTailRaised, isFalse);
     });
 
     test("코가 withers보다 낮고 앞발이 몸 중심보다 머리 쪽이면 머리를 낮추고 앞으로 향함", () {
