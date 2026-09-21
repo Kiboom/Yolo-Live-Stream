@@ -24,11 +24,14 @@ final class GrowlAnalyzer: NSObject, FlutterStreamHandler, ExternalAudioProcessi
   }()
   private var isOutputMuted = false
   private var isInferring = false
+  // Bumped by every start and stop so late model loads and inference results from an old session are dropped.
+  private var session = 0
 
   // Audio thread only, except `window` which the inference queue reads while `isInferring` is true.
   private var inputSampleRate = 48000.0
   private var ring = [Float](repeating: 0, count: GrowlAnalyzer.windowLength)
   private var ringIndex = 0
+  private var filledCount = 0
   private var samplesSinceInference = 0
   private var resampleSum: Float = 0
   private var resampleCount = 0
@@ -69,6 +72,7 @@ final class GrowlAnalyzer: NSObject, FlutterStreamHandler, ExternalAudioProcessi
       result(FlutterError(code: "MODEL_NOT_FOUND", message: "assets/yamnet.tflite is missing", details: nil))
       return
     }
+    let token = nextSession()
     inferenceQueue.async { [weak self] in
       guard let self else { return }
       do {
@@ -85,6 +89,10 @@ final class GrowlAnalyzer: NSObject, FlutterStreamHandler, ExternalAudioProcessi
         return
       }
       DispatchQueue.main.async {
+        guard token == self.currentSession() else {
+          result(nil)
+          return
+        }
         self.setOutputMuted(muteOutput)
         if !self.isAttached {
           AudioManager.sharedInstance().renderPreProcessingAdapter.addProcessing(self)
@@ -102,11 +110,34 @@ final class GrowlAnalyzer: NSObject, FlutterStreamHandler, ExternalAudioProcessi
   }
 
   private func stop() {
+    _ = nextSession()
     if isAttached {
+      // removeProcessing waits for the adapter lock, so no audio callback is running when the state below is cleared.
       AudioManager.sharedInstance().renderPreProcessingAdapter.removeProcessing(self)
       isAttached = false
     }
     setOutputMuted(false)
+    ringIndex = 0
+    filledCount = 0
+    samplesSinceInference = 0
+    resampleSum = 0
+    resampleCount = 0
+    resamplePhase = 0
+  }
+
+  private func nextSession() -> Int {
+    os_unfair_lock_lock(lock)
+    session += 1
+    let value = session
+    os_unfair_lock_unlock(lock)
+    return value
+  }
+
+  private func currentSession() -> Int {
+    os_unfair_lock_lock(lock)
+    let value = session
+    os_unfair_lock_unlock(lock)
+    return value
   }
 
   func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
@@ -148,9 +179,18 @@ final class GrowlAnalyzer: NSObject, FlutterStreamHandler, ExternalAudioProcessi
       }
     }
 
+    let isWindowReady = filledCount == GrowlAnalyzer.windowLength && samplesSinceInference >= GrowlAnalyzer.hopLength
     os_unfair_lock_lock(lock)
     let muted = isOutputMuted
+    let shouldInfer = isWindowReady && !isInferring
+    if shouldInfer { isInferring = true }
+    let token = session
     os_unfair_lock_unlock(lock)
+    if shouldInfer {
+      samplesSinceInference = 0
+      copyWindow()
+      inferenceQueue.async { [weak self] in self?.runInference(session: token) }
+    }
     if muted {
       for channel in 0..<channels {
         audioBuffer.rawBuffer(forChannel: channel).update(repeating: 0, count: frames)
@@ -163,16 +203,11 @@ final class GrowlAnalyzer: NSObject, FlutterStreamHandler, ExternalAudioProcessi
   private func appendSample(_ sample: Float) {
     ring[ringIndex] = sample
     ringIndex = (ringIndex + 1) % GrowlAnalyzer.windowLength
+    filledCount = min(filledCount + 1, GrowlAnalyzer.windowLength)
     samplesSinceInference += 1
-    guard samplesSinceInference >= GrowlAnalyzer.hopLength else { return }
+  }
 
-    os_unfair_lock_lock(lock)
-    let busy = isInferring
-    if !busy { isInferring = true }
-    os_unfair_lock_unlock(lock)
-    guard !busy else { return }
-
-    samplesSinceInference = 0
+  private func copyWindow() {
     let tail = GrowlAnalyzer.windowLength - ringIndex
     window.withUnsafeMutableBufferPointer { destination in
       ring.withUnsafeBufferPointer { source in
@@ -180,10 +215,9 @@ final class GrowlAnalyzer: NSObject, FlutterStreamHandler, ExternalAudioProcessi
         (destination.baseAddress! + tail).update(from: source.baseAddress!, count: ringIndex)
       }
     }
-    inferenceQueue.async { [weak self] in self?.runInference() }
   }
 
-  private func runInference() {
+  private func runInference(session token: Int) {
     defer {
       os_unfair_lock_lock(lock)
       isInferring = false
@@ -196,7 +230,10 @@ final class GrowlAnalyzer: NSObject, FlutterStreamHandler, ExternalAudioProcessi
       try interpreter.invoke()
       let output = try interpreter.output(at: 0)
       let score = output.data.withUnsafeBytes { Double($0.bindMemory(to: Float32.self)[GrowlAnalyzer.growlingIndex]) }
-      DispatchQueue.main.async { [weak self] in self?.eventSink?(score) }
+      DispatchQueue.main.async { [weak self] in
+        guard let self, token == self.currentSession() else { return }
+        self.eventSink?(score)
+      }
     } catch {
       NSLog("GrowlAnalyzer inference failed: \(error)")
     }
