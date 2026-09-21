@@ -78,7 +78,7 @@ class LiveStreamingConnector {
 
   /// 으르렁 감지를 켰는지. 켜면 스피커를 꺼도 수신 오디오 트랙을 끄지 않는다.
   /// 트랙을 끄면 네이티브 가로채기 지점에 무음이 들어오므로, 스피커 음소거는 GrowlAnalyzer가 분석 뒤 버퍼를 지우는 방식으로 한다.
-  final bool isGrowlDetectionEnabled;
+  bool isGrowlDetectionEnabled;
 
   bool get _isRemoteAudioTrackEnabled => isRemoteAudioEnabled || isGrowlDetectionEnabled;
 
