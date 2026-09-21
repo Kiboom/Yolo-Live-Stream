@@ -2,10 +2,13 @@ import Flutter
 import UIKit
 
 public class YoloLiveStreamPlugin: NSObject, FlutterPlugin {
+  private var growlAnalyzer: GrowlAnalyzer?
+
   public static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(name: "yolo_live_stream", binaryMessenger: registrar.messenger())
     let instance = YoloLiveStreamPlugin()
     registrar.addMethodCallDelegate(instance, channel: channel)
+    instance.growlAnalyzer = GrowlAnalyzer(registrar: registrar)
   }
 
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {

@@ -2,6 +2,8 @@ import "package:flutter/material.dart";
 import "package:flutter_webrtc/flutter_webrtc.dart";
 import "package:ultralytics_yolo/ultralytics_yolo.dart";
 import "package:yolo_live_stream/src/detection_overlay.dart";
+import "package:yolo_live_stream/src/dog_risk_analyzer.dart";
+import "package:yolo_live_stream/src/growl_analyzer.dart";
 import "package:yolo_live_stream/src/live_streaming_connector.dart";
 import "package:yolo_live_stream/src/role.dart";
 import "package:yolo_live_stream/src/yolo_analyzer.dart";
@@ -23,7 +25,11 @@ class LiveStreamingController extends ChangeNotifier {
     this.model = YoloModel.medium,
     this.customModelPath,
     this.detectionInterval = const Duration(milliseconds: 400),
+    this.dogPoseModelPath,
+    this.enableGrowlDetection = false,
+    this.dogRiskThresholds = const DogRiskThresholds(),
     this.onDetected,
+    this.onDogRiskAnalyzed,
     this.onLocalIpReady,
     this.onError,
   });
@@ -52,8 +58,20 @@ class LiveStreamingController extends ChangeNotifier {
   /// 분석 주기.
   final Duration detectionInterval;
 
+  /// 사용자가 학습한 dog-pose(task=pose) 모델 경로. 형식은 [customModelPath]와 같다. 없으면 자세, 시선, 긴장 신호를 판정하지 않는다.
+  final String? dogPoseModelPath;
+
+  /// 수신 음성에서 으르렁 소리를 감지할지(수신자만).
+  final bool enableGrowlDetection;
+
+  /// 위험도 판정 임계값.
+  final DogRiskThresholds dogRiskThresholds;
+
   /// 매 프레임 YOLO 분석 결과로 호출된다(탐지를 켰을 때만).
   final void Function(List<YOLOResult> detections)? onDetected;
+
+  /// 매 프레임 위험도 분석 결과로 호출된다(탐지를 켰을 때만).
+  final void Function(DogRiskReport report)? onDogRiskAnalyzed;
 
   /// 송신자로 시작해 자기 IP가 정해지면 호출된다.
   final void Function(String localIp)? onLocalIpReady;
@@ -67,9 +85,12 @@ class LiveStreamingController extends ChangeNotifier {
     quality: quality,
     frameRate: frameRate,
     isRemoteAudioEnabled: enableSpeaker,
+    isGrowlDetectionEnabled: enableGrowlDetection,
   );
 
   YoloAnalyzer? _analyzer;
+  GrowlAnalyzer? _growlAnalyzer;
+  DogRiskReport? _dogRiskReport;
 
   bool _ready = false;
   bool _isStarted = false;
@@ -80,6 +101,12 @@ class LiveStreamingController extends ChangeNotifier {
 
   /// 최신 탐지 결과(탐지를 껐으면 빈 리스트).
   List<YOLOResult> get detections => _analyzer?.detections ?? const <YOLOResult>[];
+
+  /// 최신 강아지 포즈 결과(포즈 모델이 없으면 null).
+  List<YOLOResult>? get dogPoses => _analyzer?.dogPoses;
+
+  /// 최신 위험도 분석 결과(탐지를 껐거나 아직 분석 전이면 null).
+  DogRiskReport? get dogRiskReport => _dogRiskReport;
 
   /// 분석 상태/오류 문자열(디버그 표시용).
   String get analyzerStatus => _analyzer?.debugStatus ?? "";
@@ -112,14 +139,31 @@ class LiveStreamingController extends ChangeNotifier {
     if (enableDetection) {
       _analyzer = YoloAnalyzer(
         onUpdate: _notify,
-        onDetected: (List<YOLOResult> detections) => onDetected?.call(detections),
+        onDetected: handleDetected,
         getRemoteTrack: () => connection.remoteVideoTrack,
         model: model,
         customModelPath: customModelPath,
+        dogPoseModelPath: dogPoseModelPath,
         interval: detectionInterval,
       );
     }
+    if (enableGrowlDetection) {
+      _growlAnalyzer = GrowlAnalyzer(onUpdate: _notify);
+    }
     _ready = true;
+  }
+
+  /// 분석기가 프레임 하나를 분석할 때마다 부른다. 테스트는 모델 없이 이 경로를 직접 호출한다.
+  @visibleForTesting
+  void handleDetected(List<YOLOResult> detections) {
+    onDetected?.call(detections);
+    final DogRiskReport report = DogRiskAnalyzer(thresholds: dogRiskThresholds).analyze(
+      detections: detections,
+      dogPoses: dogPoses,
+      growlScore: _growlAnalyzer?.growlScore,
+    );
+    _dogRiskReport = report;
+    onDogRiskAnalyzed?.call(report);
   }
 
   /// 송신자로 시작한다. 성공하면 자기 IP를 [onLocalIpReady]로 알린다.
@@ -141,18 +185,33 @@ class LiveStreamingController extends ChangeNotifier {
     await prepare();
     _isStarted = true;
     _notify();
+    connection.isGrowlDetectionEnabled = enableGrowlDetection;
     final bool ok = await connection.startAsReceiver(senderIp.trim());
     if (!ok) {
       _isStarted = false;
       _notify();
       return;
     }
+    // 오디오 트랙은 SDP 교환 뒤에 도착하므로, YOLO 로드를 기다리지 않고 먼저 걸어야 트랙이 켜지기 전에 음소거가 적용된다.
+    await startGrowlDetection();
     if (_analyzer != null) {
       try {
         await _analyzer!.start();
       } catch (error) {
         onError?.call("YOLO 모델 로드 실패: $error");
       }
+    }
+  }
+
+  /// 으르렁 분석을 시작한다. 실패하면 수신 오디오 트랙을 스피커 설정대로 되돌린다.
+  @visibleForTesting
+  Future<void> startGrowlDetection() async {
+    try {
+      await _growlAnalyzer?.start(muteOutput: !isSpeakerEnabled);
+    } catch (error) {
+      connection.isGrowlDetectionEnabled = false;
+      connection.setRemoteAudioEnabled(isSpeakerEnabled);
+      onError?.call("으르렁 감지 시작 실패: $error");
     }
   }
 
@@ -168,6 +227,8 @@ class LiveStreamingController extends ChangeNotifier {
   /// 연결을 종료한다(세션 자체는 살아 있어 다시 시작할 수 있다).
   Future<void> stop() async {
     _analyzer?.stop();
+    _dogRiskReport = null;
+    await _growlAnalyzer?.stop();
     await connection.close();
     _isStarted = false;
     _notify();
@@ -177,7 +238,12 @@ class LiveStreamingController extends ChangeNotifier {
   Future<void> switchCamera() => connection.switchCamera();
 
   /// 수신한 상대 음성의 출력을 켜고 끈다.
-  void setSpeakerEnabled(bool enabled) => connection.setRemoteAudioEnabled(enabled);
+  void setSpeakerEnabled(bool enabled) {
+    connection.setRemoteAudioEnabled(enabled);
+    if (connection.isGrowlDetectionEnabled) {
+      _growlAnalyzer?.setOutputMuted(!enabled);
+    }
+  }
 
   void _notify() {
     if (_disposed) return;
@@ -188,6 +254,7 @@ class LiveStreamingController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _analyzer?.dispose();
+    _growlAnalyzer?.stop();
     connection.dispose();
     super.dispose();
   }
@@ -217,12 +284,16 @@ class LiveStreamingView extends StatefulWidget {
     this.model = YoloModel.medium,
     this.customModelPath,
     this.detectionInterval = const Duration(milliseconds: 400),
+    this.dogPoseModelPath,
+    this.enableGrowlDetection = false,
+    this.dogRiskThresholds = const DogRiskThresholds(),
     this.showControlPanel = true,
     this.showMirrorButton = false,
     this.showPip = true,
     this.autoStart = false,
     this.senderIp,
     this.onDetected,
+    this.onDogRiskAnalyzed,
     this.onLocalIpReady,
   });
 
@@ -262,6 +333,15 @@ class LiveStreamingView extends StatefulWidget {
   /// 분석 주기.
   final Duration detectionInterval;
 
+  /// 사용자가 학습한 dog-pose(task=pose) 모델 경로. 형식은 [customModelPath]와 같다. 없으면 자세, 시선, 긴장 신호를 판정하지 않는다.
+  final String? dogPoseModelPath;
+
+  /// 수신 음성에서 으르렁 소리를 감지할지(수신자만).
+  final bool enableGrowlDetection;
+
+  /// 위험도 판정 임계값.
+  final DogRiskThresholds dogRiskThresholds;
+
   /// 내장 컨트롤 UI(IP 입력·시작/종료 버튼·상태 배지·PiP·카메라 전환 버튼)를 보일지.
   /// false면 영상과 탐지 오버레이만 남는다. 이땐 [autoStart]나 [controller]로 시작/종료한다.
   final bool showControlPanel;
@@ -280,6 +360,9 @@ class LiveStreamingView extends StatefulWidget {
 
   /// 매 프레임 YOLO 분석 결과로 호출된다(탐지를 켰을 때만).
   final void Function(List<YOLOResult> detections)? onDetected;
+
+  /// 매 프레임 위험도 분석 결과로 호출된다(탐지를 켰을 때만).
+  final void Function(DogRiskReport report)? onDogRiskAnalyzed;
 
   /// 송신자로 시작해 자기 IP가 정해지면 호출된다.
   final void Function(String localIp)? onLocalIpReady;
@@ -315,7 +398,11 @@ class _LiveStreamingViewState extends State<LiveStreamingView> {
         model: widget.model,
         customModelPath: widget.customModelPath,
         detectionInterval: widget.detectionInterval,
+        dogPoseModelPath: widget.dogPoseModelPath,
+        enableGrowlDetection: widget.enableGrowlDetection,
+        dogRiskThresholds: widget.dogRiskThresholds,
         onDetected: widget.onDetected,
+        onDogRiskAnalyzed: widget.onDogRiskAnalyzed,
         onLocalIpReady: widget.onLocalIpReady,
         onError: _showMessage,
       );
@@ -510,6 +597,8 @@ class _LiveStreamingViewState extends State<LiveStreamingView> {
           renderer: connection.remoteRenderer,
           detections: session.detections,
           mirror: session.mirror,
+          dogPoses: session.dogPoses ?? const [],
+          dogRiskReport: session.dogRiskReport,
         );
       }
       return Container(

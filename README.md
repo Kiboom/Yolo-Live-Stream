@@ -69,6 +69,10 @@ LiveStreamingView(
   senderIp: null,                            // autoStart 수신자가 접속할 송신자 IP
   onDetected: null,                          // (List<YOLOResult> results) { ... } 탐지 결과 콜백
   onLocalIpReady: null,                      // (String ip) { ... } 송신자 자기 IP 콜백
+  dogPoseModelPath: null,                    // 직접 학습한 dog-pose 모델 경로(형식은 customModelPath와 같음)
+  enableGrowlDetection: false,               // true면 수신 음성에서 으르렁 소리를 감지
+  dogRiskThresholds: DogRiskThresholds(),    // 강아지 위험도 판정 임계값
+  onDogRiskAnalyzed: null,                   // (DogRiskReport report) { ... } 강아지 위험도 콜백
 );
 ```
 
@@ -138,13 +142,35 @@ DetectionOverlay(renderer: connection.remoteRenderer, detections: analyzer.detec
 
 ## 권한 설정
 
-### Android — 자동
+### Android
 
 권한(`INTERNET`, `CAMERA`, `RECORD_AUDIO`), 카메라 기능, `usesCleartextTraffic`는 플러그인 매니페스트에
 들어 있어 **앱 빌드 시 자동 병합**됩니다. 별도 작업이 필요 없습니다.
 (앱에서 별도 `networkSecurityConfig`를 지정하면 `usesCleartextTraffic`가 덮어써질 수 있습니다.)
 
-### iOS — 직접 추가 필요
+#### compileSdk 설정 (직접 추가 필요)
+
+`flutter_webrtc` 0.12.x는 compileSdk를 31로 고정합니다.
+그런데 함께 받는 androidx 라이브러리는 34 이상을 요구해서 빌드가 실패합니다.
+앱의 `android/build.gradle.kts`에 아래 블록을 추가해 `flutter_webrtc`의 compileSdk를 36으로 올려 주세요.
+이 블록은 `project.evaluationDependsOn(":app")`이 들어 있는 `subprojects` 블록보다 앞에 넣어야 합니다.
+(`example/android/build.gradle.kts` 참고)
+
+```kotlin
+// flutter_webrtc 0.12.x pins compileSdk 31, but its androidx dependencies need 34+ (checkAarMetadata fails).
+subprojects {
+    if (name == "flutter_webrtc") {
+        afterEvaluate {
+            extensions.configure<com.android.build.api.dsl.LibraryExtension> { compileSdk = 36 }
+        }
+    }
+}
+subprojects {
+    project.evaluationDependsOn(":app")
+}
+```
+
+### iOS
 
 iOS는 Pod이 앱의 `Info.plist`를 자동으로 수정할 수 없습니다. 플러그인을 쓰는 앱의
 `ios/Runner/Info.plist`에 아래 키를 **직접 추가**하세요. (`example/ios/Runner/Info.plist` 참고)
@@ -161,6 +187,19 @@ iOS는 Pod이 앱의 `Info.plist`를 자동으로 수정할 수 없습니다. �
     <key>NSAllowsLocalNetworking</key>
     <true/>
 </dict>
+```
+
+#### CocoaPods 사용 (SwiftPM 끄기 권장)
+
+이 플러그인의 iOS 부분은 CocoaPods에서만 동작합니다.
+의존하는 `TensorFlowLiteSwift`와 `flutter_webrtc`가 SwiftPM을 지원하지 않기 때문입니다.
+앱의 `pubspec.yaml`에서 SwiftPM을 꺼 두는 것을 권장합니다.
+(`example/pubspec.yaml` 참고)
+
+```yaml
+flutter:
+  config:
+    enable-swift-package-manager: false
 ```
 
 ## 동작 방법
@@ -212,6 +251,115 @@ flutter:
 
 > 모델은 **detection(task=detect)** 모델이어야 합니다. ultralytics에서 export 시
 > `yolo export format=tflite int8=True`(Android), `yolo export format=coreml`(iOS)로 내보냅니다.
+
+## 강아지 위험도
+
+수신 영상에서 강아지와 사람을 찾고, 강아지가 지금 사람에게 위협이 될 만한 상황인지 판정합니다.
+결과는 `onDogRiskAnalyzed` 콜백으로 `DogRiskReport`를 받습니다.
+
+### 판정 항목
+
+| 항목 | 필드 | 판정 방법 |
+| --- | --- | --- |
+| 거리 | `distance` | 가장 가까운 사람 박스와 강아지 박스 사이 간격을 강아지 박스 긴 변으로 나눈 값입니다. 겹치면 0입니다. |
+| 자세 | `posture` | 키포인트 위치로 서 있음(`standing`), 앉음(`sitting`), 엎드림(`lying`)을 가립니다. 판정할 수 없으면 `unknown`입니다. |
+| 시선 | `isFacingPerson` | 머리 방향과 사람 방향 사이 각도가 `facingAngleDegrees` 안쪽이면 사람 쪽을 본다고 판정합니다. |
+| 긴장 신호 | `isTailRaised`, `isHeadLoweredForward` | 꼬리가 높이 들렸는지, 머리를 낮추고 앞으로 쏠렸는지 봅니다. |
+| 으르렁 | `growlScore` | 수신 음성을 YAMNet으로 분석한 Growling 점수입니다. |
+| 위험도 | `level` | 위 항목을 합쳐 `low`, `caution`, `high`로 냅니다. |
+
+위험도 규칙은 다음과 같습니다.
+
+| 조건 | 위험도 |
+| --- | --- |
+| 가까움 + (으르렁 또는 (사람 쪽을 봄 + 긴장 신호)) | `high` |
+| 가까움, 또는 거리와 상관없이 으르렁 | `caution` |
+| 그 밖 | `low` |
+
+"가까움"은 `distance`가 `nearDistance`보다 작은 경우입니다.
+"으르렁"은 `growlScore`가 `growlScore` 임계값 이상인 경우입니다.
+"긴장 신호"는 꼬리가 들렸거나 머리를 낮추고 앞으로 쏠린 경우입니다.
+긴장 신호는 강아지가 가까이 있으면서 사람 쪽을 볼 때만 위험도를 올립니다.
+
+### 포즈 모델이 없을 때
+
+`dogPoseModelPath`를 넘기지 않으면 거리와 으르렁만으로 판정합니다.
+이때 `posture`, `isFacingPerson`, `isTailRaised`, `isHeadLoweredForward`는 `null`입니다.
+
+### 사용 예
+
+```dart
+import "dart:io";
+
+LiveStreamingView(
+  role: Role.receiver,
+  enableGrowlDetection: true,
+  dogPoseModelPath: Platform.isIOS
+      ? "assets/models/dog_pose.mlpackage.zip"
+      : "assets/models/dog_pose.tflite",
+  dogRiskThresholds: const DogRiskThresholds(nearDistance: 0.5, growlScore: 0.5),
+  onDogRiskAnalyzed: (DogRiskReport report) {
+    if (report.level == DogRiskLevel.high) {
+      // 보호자에게 알림
+    }
+  },
+);
+```
+
+### 포즈 모델 학습
+
+Ultralytics는 학습된 dog-pose 가중치를 공개하지 않습니다.
+그래서 포즈 모델은 직접 학습해서 넘겨야 합니다.
+학습 스크립트는 `tool/train_dog_pose.py`에 있으며, [dog-pose 데이터셋](https://docs.ultralytics.com/datasets/pose/dog-pose)으로 `yolo26n-pose`를 학습합니다.
+
+```bash
+pip install -r tool/requirements.txt
+python3 tool/train_dog_pose.py --epochs 100 --imgsz 640 --model yolo26n-pose.pt --export both
+```
+
+1. 데이터셋은 첫 실행 때 ultralytics가 자동으로 내려받습니다.
+2. 학습이 끝나면 `--export` 값에 따라 모델을 내보냅니다. `tflite`는 Android용 `.tflite`, `coreml`은 iOS용 `.mlpackage.zip`, `both`(기본값)는 둘 다 내보냅니다.
+3. 두 파일을 앱의 `assets/models/`에 넣고, 플랫폼에 맞는 경로를 `dogPoseModelPath`로 넘깁니다.
+
+장치는 CUDA, MPS, CPU 순서로 자동 선택하며, `--device`로 직접 지정할 수 있습니다.
+CPU로 학습하면 매우 오래 걸리므로 GPU를 권장합니다.
+TFLite 내보내기는 macOS의 Python 3.13 이상에서 막히고, Core ML 내보내기는 macOS에서만 됩니다.
+그래서 macOS에서는 `--export coreml`, Linux(예: Colab)에서는 `--export tflite`로 실행하는 것을 권장합니다.
+
+`--weights`에 이미 학습한 `.pt` 파일을 넘기면 학습을 건너뛰고 내보내기만 합니다.
+그래서 두 플랫폼 모델을 만들 때 학습은 한 번만 하면 됩니다.
+
+```bash
+# macOS: 학습 후 iOS용 모델 내보내기 (학습 결과 best.pt 경로가 출력됩니다)
+python3 tool/train_dog_pose.py --export coreml
+# Linux(예: Colab): 같은 best.pt로 Android용 모델만 내보내기
+python3 tool/train_dog_pose.py --weights best.pt --export tflite
+```
+
+내보내기 설정은 `ultralytics_yolo` 패키지의 공식 모델과 같습니다.
+
+| 플랫폼 | 형식 | 설정 |
+| --- | --- | --- |
+| Android | `.tflite` | `int8=True`, `nms=False`, `end2end=False` |
+| iOS | `.mlpackage.zip` | `int8=True`, `nms=False`, `end2end=True` |
+
+### 으르렁 감지
+
+으르렁 감지는 수신 기기에서 받은 음성으로 분석합니다.
+`enableSpeaker: false`로 스피커를 꺼도 분석은 계속됩니다.
+YAMNet 모델은 플러그인에 들어 있어 따로 준비할 필요가 없습니다.
+
+### 한계
+
+| 한계 | 내용 |
+| --- | --- |
+| 자세와 시선 | 규칙 기반이라 옆모습에서는 괜찮지만, 정면이나 뒷모습에서는 정확도가 떨어집니다. |
+| 긴장 신호 | 꼬리가 들리는 모습은 놀 때도 나와 오탐이 많습니다. |
+| 거리 | 화면은 평면이라 카메라 기준 앞뒤 거리를 알 수 없습니다. |
+| 으르렁 | YAMNet은 놀이 중 으르렁과 공격 전 으르렁을 구분하지 못합니다. |
+| 용도 | 이 위험도는 보호자가 한 번 살펴볼 순간을 알려 주는 수준입니다. 안전을 보장하지 않습니다. |
+
+임계값은 `dogRiskThresholds`로 조정할 수 있습니다.
 
 ## 예제
 
