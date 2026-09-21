@@ -15,6 +15,10 @@ Pod::Spec.new do |s|
   s.source           = { :path => '.' }
   s.source_files = 'yolo_live_stream/Sources/yolo_live_stream/**/*'
   s.dependency 'Flutter'
+  s.dependency 'flutter_webrtc'
+  s.dependency 'WebRTC-SDK'
+  s.dependency 'TensorFlowLiteSwift', '~> 2.17.0'
+  s.static_framework = true
   s.platform = :ios, '13.0'
 
   # Flutter.framework does not contain a i386 slice.
