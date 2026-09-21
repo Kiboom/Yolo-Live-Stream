@@ -8,6 +8,15 @@ PODS:
   - shared_preferences_foundation (0.0.1):
     - Flutter
     - FlutterMacOS
+  - TensorFlowLiteC (2.17.0):
+    - TensorFlowLiteC/Core (= 2.17.0)
+  - TensorFlowLiteC/Core (2.17.0)
+  - TensorFlowLiteSwift (2.17.0):
+    - TensorFlowLiteSwift/Core (= 2.17.0)
+  - TensorFlowLiteSwift/Core (2.17.0):
+    - TensorFlowLiteC (= 2.17.0)
+    - TensorFlowLiteSwift/Privacy (= 2.17.0)
+  - TensorFlowLiteSwift/Privacy (2.17.0)
   - ultralytics_yolo (0.6.0):
     - Flutter
     - UltralyticsYOLO (< 9.0, >= 8.9.4)
@@ -19,6 +28,9 @@ PODS:
   - WebRTC-SDK (125.6422.06)
   - yolo_live_stream (0.0.1):
     - Flutter
+    - flutter_webrtc
+    - TensorFlowLiteSwift (~> 2.17.0)
+    - WebRTC-SDK
 
 DEPENDENCIES:
   - Flutter (from `Flutter`)
@@ -32,6 +44,8 @@ DEPENDENCIES:
 
 SPEC REPOS:
   trunk:
+    - TensorFlowLiteC
+    - TensorFlowLiteSwift
     - UltralyticsYOLO
     - WebRTC-SDK
 
@@ -58,12 +72,14 @@ SPEC CHECKSUMS:
   flutter_webrtc: 90260f83024b1b96d239a575ea4e3708e79344d1
   package_info_plus: c0502532a26c7662a62a356cebe2692ec5fe4ec4
   shared_preferences_foundation: 5086985c1d43c5ba4d5e69a4e8083a389e2909e6
+  TensorFlowLiteC: eac6d689a8d391d1b202dc59e3d9165ba64aaf73
+  TensorFlowLiteSwift: 723fe42222815e72490c79feeff05305530de393
   ultralytics_yolo: 961735d06e7680a8f5582ab6e7875dfb5a36d466
   UltralyticsYOLO: 163cd55ce4e0282ebc0d5712dd098d1897d04d7d
   url_launcher_ios: bb13df5870e8c4234ca12609d04010a21be43dfa
   wakelock_plus: 76957ab028e12bfa4e66813c99e46637f367fc7e
   WebRTC-SDK: 79942c006ea64f6fb48d7da8a4786dfc820bc1db
-  yolo_live_stream: 5a4fb00052361743d69e0636f977fa593c7c4ca6
+  yolo_live_stream: e14ead07d6ee91a30c7ab8042cc9d1665beae6d1
 
 PODFILE CHECKSUM: 251cb053df7158f337c0712f2ab29f4e0fa474ce
 
