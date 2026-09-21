@@ -27,6 +27,7 @@ class YoloAnalyzer {
     this.onDetected,
     this.model = YoloModel.medium,
     this.customModelPath,
+    this.dogPoseModelPath,
     this.interval = const Duration(milliseconds: 400),
   });
 
@@ -45,6 +46,9 @@ class YoloAnalyzer {
   /// 주의사항: 반드시 detect(task=detect) 계열 모델이어야 함
   final String? customModelPath;
 
+  /// 사용자가 학습한 dog-pose(task=pose) 모델 경로. 형식은 [customModelPath]와 같다. 지정하면 강아지가 탐지된 프레임에만 포즈 추정을 추가로 돌린다.
+  final String? dogPoseModelPath;
+
   /// 분석 주기. 짧을수록 박스가 자주 갱신되지만 기기 부담이 커진다(중복 분석은 _isBusy로 방지).
   final Duration interval;
   final void Function() onUpdate;
@@ -52,10 +56,14 @@ class YoloAnalyzer {
   final void Function(List<YOLOResult> detections)? onDetected;
   final MediaStreamTrack? Function() getRemoteTrack;
   late final YOLO _yolo = YOLO(modelPath: customModelPath ?? model.id, task: YOLOTask.detect);
+  late final YOLO? _dogPoseYolo = dogPoseModelPath == null ? null : YOLO(modelPath: dogPoseModelPath ?? "", task: YOLOTask.pose);
   bool _isModelLoaded = false;
   bool _isBusy = false;
   Timer? _timer;
   List<YOLOResult> detections = [];
+
+  /// 최신 강아지 포즈 결과. 포즈 모델이 없으면 null, 강아지가 없으면 빈 리스트.
+  List<YOLOResult>? dogPoses;
   String debugStatus = "대기 중"; // 화면에 띄워서 분석 상태/오류를 눈으로 확인하는 용도
 
   // 모델을 준비하고(첫 실행 시 자동 다운로드) 주기적 분석을 시작한다.
@@ -64,6 +72,7 @@ class YoloAnalyzer {
       debugStatus = "모델 로딩 중...";
       onUpdate();
       await _yolo.loadModel();
+      await _dogPoseYolo?.loadModel();
       _isModelLoaded = true;
       debugStatus = "모델 로드 완료";
       onUpdate();
@@ -85,6 +94,7 @@ class YoloAnalyzer {
       final Map<String, dynamic> result = await _yolo.predict(frame);
       final List<dynamic> rawDetections = (result["detections"] as List?) ?? [];
       detections = rawDetections.map((item) => YOLOResult.fromMap(item as Map)).toList();
+      dogPoses = await _predictDogPoses(frame);
       onDetected?.call(detections);
       debugStatus = "프레임 ${frame.length ~/ 1024}KB, 탐지 ${detections.length}개";
       onUpdate();
@@ -96,6 +106,16 @@ class YoloAnalyzer {
     }
   }
 
+  // 강아지가 있는 프레임에만 포즈 모델을 돌려 기기 부담을 줄인다.
+  Future<List<YOLOResult>?> _predictDogPoses(Uint8List frame) async {
+    final YOLO? dogPoseYolo = _dogPoseYolo;
+    if (dogPoseYolo == null) return null;
+    if (!detections.any((YOLOResult detection) => detection.className == "dog")) return [];
+    final Map<String, dynamic> result = await dogPoseYolo.predict(frame);
+    final List<dynamic> rawPoses = (result["detections"] as List?) ?? [];
+    return rawPoses.map((item) => YOLOResult.fromMap(item as Map)).toList();
+  }
+
   // 분석을 멈추고 박스를 지운다.
   void stop() {
     _timer?.cancel();
@@ -103,11 +123,13 @@ class YoloAnalyzer {
     _isBusy = false; // in-flight 분석이 트랙 폐기로 안 끝나도 재연결 시 멈추지 않도록 리셋
 
     detections = [];
+    dogPoses = dogPoseModelPath == null ? null : [];
     onUpdate();
   }
 
   Future<void> dispose() async {
     stop();
     await _yolo.dispose();
+    await _dogPoseYolo?.dispose();
   }
 }
