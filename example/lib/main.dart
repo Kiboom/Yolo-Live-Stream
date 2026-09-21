@@ -39,7 +39,7 @@ class _ExampleHomeState extends State<ExampleHome> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+              padding: const EdgeInsets.only(left: 20, top: 16, right: 20),
               child: LiveStreamRoleSwitcher(
                 role: role,
                 onChanged: (Role value) {

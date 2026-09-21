@@ -1,7 +1,7 @@
 """Train yolo26n-pose on Ultralytics dog-pose and export plugin-ready models.
 
 Usage:
-    pip install ultralytics
+    pip install -r tool/requirements.txt
     python3 tool/train_dog_pose.py --epochs 100 --imgsz 640
 
 Outputs (pass one as `dogPoseModelPath`):
@@ -44,7 +44,7 @@ def main():
     tflite = trained.export(format="tflite", imgsz=args.imgsz, int8=True, nms=False, end2end=False, data="dog-pose.yaml")
     print(f"Android: {tflite}")
 
-    mlpackage = YOLO(best).export(format="coreml", imgsz=args.imgsz, int8=True, nms=False)
+    mlpackage = YOLO(best).export(format="coreml", imgsz=args.imgsz, int8=True, nms=False, end2end=True)
     archive = shutil.make_archive(str(mlpackage), "zip", root_dir=Path(mlpackage).parent, base_dir=Path(mlpackage).name)
     print(f"iOS: {archive}")
 
