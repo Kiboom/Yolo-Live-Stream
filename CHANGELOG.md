@@ -1,3 +1,11 @@
+## 0.11.0
+
+- 강아지 위험도 분석 추가. 수신 영상의 강아지와 사람 사이 거리, 자세, 시선, 긴장 신호, 으르렁 소리를 합쳐 위험도(`low`, `caution`, `high`)를 판정한다.
+- `LiveStreamingView`와 `LiveStreamingController`에 `dogPoseModelPath`, `enableGrowlDetection`(기본 false), `dogRiskThresholds`, `onDogRiskAnalyzed` 추가.
+- `DogRiskReport`, `DogRiskLevel`, `DogPosture`, `DogRiskThresholds` 공개.
+- 포즈 모델은 사용자가 직접 학습해 넘긴다. 학습 스크립트 `tool/train_dog_pose.py` 추가. 포즈 모델이 없으면 거리와 으르렁만으로 판정한다.
+- 으르렁 감지용 YAMNet 모델을 플러그인에 포함. 수신 기기에서 분석하며 스피커를 꺼도 동작한다.
+
 ## 0.10.0
 
 - 반복 연결/종료 후 YOLO 탐지가 멈추던 버그 수정. 종료가 분석 도중(captureFrame·predict)에 일어나 트랙이 폐기되면 in-flight 호출이 끝나지 않아 `_isBusy`가 true로 박히고, 재연결해도 매 프레임이 즉시 건너뛰어졌다. `stop`에서 `_isBusy`를 리셋해 재시작이 항상 깨끗하도록 한다.

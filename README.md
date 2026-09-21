@@ -69,6 +69,10 @@ LiveStreamingView(
   senderIp: null,                            // autoStart 수신자가 접속할 송신자 IP
   onDetected: null,                          // (List<YOLOResult> results) { ... } 탐지 결과 콜백
   onLocalIpReady: null,                      // (String ip) { ... } 송신자 자기 IP 콜백
+  dogPoseModelPath: null,                    // 직접 학습한 dog-pose 모델 경로(형식은 customModelPath와 같음)
+  enableGrowlDetection: false,               // true면 수신 음성에서 으르렁 소리를 감지
+  dogRiskThresholds: DogRiskThresholds(),    // 강아지 위험도 판정 임계값
+  onDogRiskAnalyzed: null,                   // (DogRiskReport report) { ... } 강아지 위험도 콜백
 );
 ```
 
@@ -212,6 +216,94 @@ flutter:
 
 > 모델은 **detection(task=detect)** 모델이어야 합니다. ultralytics에서 export 시
 > `yolo export format=tflite int8=True`(Android), `yolo export format=coreml`(iOS)로 내보냅니다.
+
+## 강아지 위험도
+
+수신 영상에서 강아지와 사람을 찾고, 강아지가 지금 사람에게 위협이 될 만한 상황인지 판정합니다.
+결과는 `onDogRiskAnalyzed` 콜백으로 `DogRiskReport`를 받습니다.
+
+### 판정 항목
+
+| 항목 | 필드 | 판정 방법 |
+| --- | --- | --- |
+| 거리 | `distance` | 가장 가까운 사람 박스와 강아지 박스 사이 간격을 강아지 박스 긴 변으로 나눈 값입니다. 겹치면 0입니다. |
+| 자세 | `posture` | 키포인트 위치로 서 있음(`standing`), 앉음(`sitting`), 엎드림(`lying`)을 가립니다. 판정할 수 없으면 `unknown`입니다. |
+| 시선 | `isFacingPerson` | 머리 방향과 사람 방향 사이 각도가 `facingAngleDegrees` 안쪽이면 사람 쪽을 본다고 판정합니다. |
+| 긴장 신호 | `isTailRaised`, `isHeadLoweredForward` | 꼬리가 높이 들렸는지, 머리를 낮추고 앞으로 쏠렸는지 봅니다. |
+| 으르렁 | `growlScore` | 수신 음성을 YAMNet으로 분석한 Growling 점수입니다. |
+| 위험도 | `level` | 위 항목을 합쳐 `low`, `caution`, `high`로 냅니다. |
+
+위험도 규칙은 다음과 같습니다.
+
+| 조건 | 위험도 |
+| --- | --- |
+| 가까움 + (으르렁 또는 긴장 신호) | `high` |
+| 가까움, 또는 거리와 상관없이 으르렁 | `caution` |
+| 그 밖 | `low` |
+
+"가까움"은 `distance`가 `nearDistance`보다 작은 경우입니다.
+"으르렁"은 `growlScore`가 `growlScore` 임계값 이상인 경우입니다.
+
+### 포즈 모델이 없을 때
+
+`dogPoseModelPath`를 넘기지 않으면 거리와 으르렁만으로 판정합니다.
+이때 `posture`, `isFacingPerson`, `isTailRaised`, `isHeadLoweredForward`는 `null`입니다.
+
+### 사용 예
+
+```dart
+import "dart:io";
+
+LiveStreamingView(
+  role: Role.receiver,
+  enableGrowlDetection: true,
+  dogPoseModelPath: Platform.isIOS
+      ? "assets/models/dog_pose.mlpackage.zip"
+      : "assets/models/dog_pose.tflite",
+  dogRiskThresholds: const DogRiskThresholds(nearDistance: 0.5, growlScore: 0.5),
+  onDogRiskAnalyzed: (DogRiskReport report) {
+    if (report.level == DogRiskLevel.high) {
+      // 보호자에게 알림
+    }
+  },
+);
+```
+
+### 포즈 모델 학습
+
+Ultralytics는 학습된 dog-pose 가중치를 공개하지 않습니다.
+그래서 포즈 모델은 직접 학습해서 넘겨야 합니다.
+학습 스크립트는 `tool/train_dog_pose.py`에 있으며, [dog-pose 데이터셋](https://docs.ultralytics.com/datasets/pose/dog-pose)으로 `yolo26n-pose`를 학습합니다.
+
+```bash
+pip install -r tool/requirements.txt
+python3 tool/train_dog_pose.py --epochs 100 --imgsz 640
+```
+
+1. 데이터셋은 첫 실행 때 자동으로 내려받습니다.
+2. 학습이 끝나면 Android용 `.tflite`와 iOS용 `.mlpackage.zip`을 내보냅니다.
+3. 두 파일을 앱의 `assets/models/`에 넣고, 플랫폼에 맞는 경로를 `dogPoseModelPath`로 넘깁니다.
+
+장치는 CUDA, MPS, CPU 순서로 자동 선택합니다.
+CPU로 학습하면 매우 오래 걸리므로 GPU를 권장합니다.
+
+### 으르렁 감지
+
+으르렁 감지는 수신 기기에서 받은 음성으로 분석합니다.
+`enableSpeaker: false`로 스피커를 꺼도 분석은 계속됩니다.
+YAMNet 모델은 플러그인에 들어 있어 따로 준비할 필요가 없습니다.
+
+### 한계
+
+| 한계 | 내용 |
+| --- | --- |
+| 자세와 시선 | 규칙 기반이라 옆모습에서는 괜찮지만, 정면이나 뒷모습에서는 정확도가 떨어집니다. |
+| 긴장 신호 | 꼬리가 들리는 모습은 놀 때도 나와 오탐이 많습니다. |
+| 거리 | 화면은 평면이라 카메라 기준 앞뒤 거리를 알 수 없습니다. |
+| 으르렁 | YAMNet은 놀이 중 으르렁과 공격 전 으르렁을 구분하지 못합니다. |
+| 용도 | 이 위험도는 보호자가 한 번 살펴볼 순간을 알려 주는 수준입니다. 안전을 보장하지 않습니다. |
+
+임계값은 `dogRiskThresholds`로 조정할 수 있습니다.
 
 ## 예제
 
