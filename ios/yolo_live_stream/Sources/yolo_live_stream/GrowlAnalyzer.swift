@@ -73,6 +73,12 @@ final class GrowlAnalyzer: NSObject, FlutterStreamHandler, ExternalAudioProcessi
       return
     }
     let token = nextSession()
+    // Attach before the model loads so output is muted as soon as a remote track arrives.
+    setOutputMuted(muteOutput)
+    if !isAttached {
+      AudioManager.sharedInstance().renderPreProcessingAdapter.addProcessing(self)
+      isAttached = true
+    }
     inferenceQueue.async { [weak self] in
       guard let self else { return }
       do {
@@ -82,23 +88,12 @@ final class GrowlAnalyzer: NSObject, FlutterStreamHandler, ExternalAudioProcessi
           try interpreter.allocateTensors()
           self.interpreter = interpreter
         }
+        DispatchQueue.main.async { result(nil) }
       } catch {
         DispatchQueue.main.async {
+          if token == self.currentSession() { self.stop() }
           result(FlutterError(code: "MODEL_LOAD_FAILED", message: error.localizedDescription, details: nil))
         }
-        return
-      }
-      DispatchQueue.main.async {
-        guard token == self.currentSession() else {
-          result(nil)
-          return
-        }
-        self.setOutputMuted(muteOutput)
-        if !self.isAttached {
-          AudioManager.sharedInstance().renderPreProcessingAdapter.addProcessing(self)
-          self.isAttached = true
-        }
-        result(nil)
       }
     }
   }
