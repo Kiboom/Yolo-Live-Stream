@@ -15,10 +15,12 @@ class YoloLiveStreamPlugin :
     // This local reference serves to register the plugin with the Flutter Engine and unregister it
     // when the Flutter Engine is detached from the Activity
     private lateinit var channel: MethodChannel
+    private var growlAnalyzer: GrowlAnalyzer? = null
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, "yolo_live_stream")
         channel.setMethodCallHandler(this)
+        growlAnalyzer = GrowlAnalyzer(flutterPluginBinding.applicationContext, flutterPluginBinding.binaryMessenger)
     }
 
     override fun onMethodCall(
@@ -34,5 +36,7 @@ class YoloLiveStreamPlugin :
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
+        growlAnalyzer?.dispose()
+        growlAnalyzer = null
     }
 }
