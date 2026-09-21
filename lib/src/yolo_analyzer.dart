@@ -57,7 +57,8 @@ class YoloAnalyzer {
   final void Function(List<YOLOResult> detections)? onDetected;
   final MediaStreamTrack? Function() getRemoteTrack;
   late final YOLO _yolo = YOLO(modelPath: customModelPath ?? model.id, task: YOLOTask.detect);
-  late final YOLO? _dogPoseYolo = dogPoseModelPath == null ? null : YOLO(modelPath: dogPoseModelPath ?? "", task: YOLOTask.pose);
+  // 기본 인스턴스를 같이 쓰면 네이티브에서 detect 모델이 포즈 모델로 교체되므로 별도 인스턴스로 띄운다.
+  late final YOLO? _dogPoseYolo = dogPoseModelPath == null ? null : YOLO(modelPath: dogPoseModelPath ?? "", task: YOLOTask.pose, useMultiInstance: true);
   bool _isModelLoaded = false;
   bool _isBusy = false;
   int _generation = 0; // stop()마다 올려, 멈추기 전에 시작한 분석의 늦은 결과를 버린다
@@ -70,12 +71,15 @@ class YoloAnalyzer {
 
   // 모델을 준비하고(첫 실행 시 자동 다운로드) 주기적 분석을 시작한다.
   Future<void> start() async {
+    final int generation = _generation;
     if (!_isModelLoaded) {
       debugStatus = "모델 로딩 중...";
       onUpdate();
       await _yolo.loadModel();
       await _dogPoseYolo?.loadModel();
       _isModelLoaded = true;
+      // 로드 중에 stop()이 불렸으면 타이머를 만들지 않아야 멈춘 뒤 분석이 되살아나지 않는다.
+      if (generation != _generation) return;
       debugStatus = "모델 로드 완료";
       onUpdate();
     }

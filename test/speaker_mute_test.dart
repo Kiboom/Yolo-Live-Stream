@@ -108,6 +108,33 @@ void main() {
     expect(analyzer.detections, isEmpty);
     expect(analyzer.debugStatus, "대기 중");
   });
+  test("does not start the analysis timer when stop is called while the model loads", () async {
+    const MethodChannel yoloChannel = MethodChannel("yolo_single_image_channel");
+    final Completer<void> loadGate = Completer<void>();
+    final Completer<void> loadStarted = Completer<void>();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(yoloChannel, (MethodCall call) async {
+      if (call.method != "loadModel") return <String, dynamic>{};
+      loadStarted.complete();
+      await loadGate.future;
+      return true;
+    });
+    int updateCount = 0;
+    final YoloAnalyzer analyzer = YoloAnalyzer(
+      onUpdate: () => updateCount++,
+      getRemoteTrack: () => null,
+      customModelPath: "/models/detect.tflite",
+      interval: const Duration(milliseconds: 10),
+    );
+    final Future<void> starting = analyzer.start();
+    await loadStarted.future;
+    analyzer.stop();
+    final int stoppedUpdateCount = updateCount;
+    loadGate.complete();
+    await starting;
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(updateCount, stoppedUpdateCount);
+    expect(analyzer.debugStatus, "모델 로딩 중...");
+  });
 }
 
 class FakeVideoTrack implements MediaStreamTrack {
