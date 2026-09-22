@@ -4,6 +4,8 @@
 - `LiveStreamingView`와 `LiveStreamingController`에 `dogPoseModelPath`, `enableGrowlDetection`(기본 false), `dogRiskThresholds`, `onDogRiskAnalyzed` 추가.
 - `DogRiskReport`, `DogRiskLevel`, `DogPosture`, `DogRiskThresholds` 공개.
 - 포즈 모델은 사용자가 직접 학습해 넘긴다. 학습 스크립트 `tool/train_dog_pose.py` 추가. 포즈 모델이 없으면 거리와 으르렁만으로 판정한다.
+- 학습 스크립트는 Android용 TFLite를 동적 int8, end-to-end 출력, NHWC 입력으로 내보내고, 플러그인이 읽을 수 없는 모양이면 실패한다. 키포인트가 24개라 공식 설정(`end2end=False`)으로 내보내면 Android에서 모델을 불러오지 못한다.
+- example 앱에 학습한 dog-pose 모델(`example/assets/models/dog_pose.tflite`, `dog_pose.mlpackage.zip`)을 넣었다.
 - 으르렁 감지용 YAMNet 모델을 플러그인에 포함. 수신 기기에서 분석하며 스피커를 꺼도 동작한다.
 - README에 Android 빌드 안내 추가. `flutter_webrtc` 0.12.x의 compileSdk 31이 androidx 요구 버전(34 이상)보다 낮아 빌드가 실패하므로, 앱의 `android/build.gradle.kts`에서 compileSdk를 36으로 올리는 설정이 필요하다.
 - README에 iOS 빌드 안내 추가. `TensorFlowLiteSwift`와 `flutter_webrtc`가 SwiftPM을 지원하지 않아 iOS는 CocoaPods 전용이며, 앱 `pubspec.yaml`에 `enable-swift-package-manager: false`를 권장한다.

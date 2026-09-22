@@ -24,4 +24,7 @@ flutter:
   config:
     enable-swift-package-manager: false
 
+  assets:
+    - assets/models/
+
   uses-material-design: true

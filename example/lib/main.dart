@@ -1,3 +1,4 @@
+import "package:flutter/foundation.dart";
 import "package:flutter/material.dart";
 import "package:yolo_live_stream/yolo_live_stream.dart";
 
@@ -55,10 +56,12 @@ class _ExampleHomeState extends State<ExampleHome> {
                 child: Text("Dog risk: ${riskLevel!.name}"),
               ),
             Expanded(
-              // Pass a trained dog-pose model to enable posture checks:
-              // dogPoseModelPath: "assets/models/dog-pose.tflite" (iOS: .mlpackage.zip), see tool/train_dog_pose.py.
               child: LiveStreamingView(
                 role: role,
+                // Exported by tool/train_dog_pose.py; Android needs .tflite and iOS needs .mlpackage.zip.
+                dogPoseModelPath: defaultTargetPlatform == TargetPlatform.iOS
+                    ? "assets/models/dog_pose.mlpackage.zip"
+                    : "assets/models/dog_pose.tflite",
                 enableGrowlDetection: true,
                 onDogRiskAnalyzed: (DogRiskReport report) {
                   setState(() {

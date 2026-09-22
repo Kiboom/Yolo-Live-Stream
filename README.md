@@ -319,12 +319,13 @@ python3 tool/train_dog_pose.py --epochs 100 --imgsz 640 --model yolo26n-pose.pt 
 
 1. 데이터셋은 첫 실행 때 ultralytics가 자동으로 내려받습니다.
 2. 학습이 끝나면 `--export` 값에 따라 모델을 내보냅니다. `tflite`는 Android용 `.tflite`, `coreml`은 iOS용 `.mlpackage.zip`, `both`(기본값)는 둘 다 내보냅니다.
-3. 두 파일을 앱의 `assets/models/`에 넣고, 플랫폼에 맞는 경로를 `dogPoseModelPath`로 넘깁니다.
+3. 두 파일을 앱의 `assets/models/`에 넣고, 플랫폼에 맞는 경로를 `dogPoseModelPath`로 넘깁니다. example 앱의 `example/assets/models/`에 이렇게 만든 파일이 들어 있습니다.
 
 장치는 CUDA, MPS, CPU 순서로 자동 선택하며, `--device`로 직접 지정할 수 있습니다.
 CPU로 학습하면 매우 오래 걸리므로 GPU를 권장합니다.
 TFLite 내보내기는 macOS의 Python 3.13 이상에서 막히고, Core ML 내보내기는 Windows에서 되지 않습니다.
 그래서 Linux(예: Colab)에서 `--export both`로 두 모델을 한 번에 내보내는 것을 권장합니다.
+macOS에서는 Python 3.12를 쓰면 두 모델을 한 번에 내보낼 수 있습니다.
 
 `--weights`에 이미 학습한 `.pt` 파일을 넘기면 학습을 건너뛰고 내보내기만 합니다.
 그래서 두 플랫폼 모델을 만들 때 학습은 한 번만 하면 됩니다.
@@ -334,12 +335,15 @@ TFLite 내보내기는 macOS의 Python 3.13 이상에서 막히고, Core ML 내�
 python3 tool/train_dog_pose.py --weights best.pt --export both
 ```
 
-내보내기 설정은 `ultralytics_yolo` 패키지의 공식 모델과 같습니다.
+Android 설정은 `ultralytics_yolo` 공식 모델과 다릅니다.
+키포인트가 17개가 아니면 플러그인 Android 코드가 end-to-end 출력만 받기 때문입니다.
 
 | 플랫폼 | 형식 | 설정 |
 | --- | --- | --- |
-| Android | `.tflite` | `int8=True`, `nms=False`, `end2end=False` |
-| iOS | `.mlpackage.zip` | `int8=True`, `nms=False`, `end2end=True` |
+| Android | `.tflite` | `quantize="w8a32"`(동적 int8), `nms=False`(end-to-end), 입력 `[1, 640, 640, 3]` |
+| iOS | `.mlpackage.zip` | `quantize=8`, `nms=False`(end-to-end) |
+
+스크립트는 내보낸 TFLite의 입력과 출력 모양을 확인하고, 플러그인이 읽을 수 없는 모양이면 실패합니다.
 
 ### 으르렁 감지
 

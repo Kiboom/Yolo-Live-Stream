@@ -43,3 +43,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Trained PyTorch checkpoints; only exported models are committed
+*.pt

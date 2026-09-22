@@ -1,1 +1,8 @@
-ultralytics
+ultralytics==8.4.157
+litert-torch>=0.9.0
+ai-edge-litert>=2.1.4
+ai-edge-quantizer>=0.6.0
+coremltools>=9.0
+scikit-learn
+# Ultralytics caps numpy for Core ML export; newer numpy fails while converting the attention ops.
+numpy>=1.14.5,<=2.3.5
