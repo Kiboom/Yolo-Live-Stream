@@ -323,17 +323,15 @@ python3 tool/train_dog_pose.py --epochs 100 --imgsz 640 --model yolo26n-pose.pt 
 
 장치는 CUDA, MPS, CPU 순서로 자동 선택하며, `--device`로 직접 지정할 수 있습니다.
 CPU로 학습하면 매우 오래 걸리므로 GPU를 권장합니다.
-TFLite 내보내기는 macOS의 Python 3.13 이상에서 막히고, Core ML 내보내기는 macOS에서만 됩니다.
-그래서 macOS에서는 `--export coreml`, Linux(예: Colab)에서는 `--export tflite`로 실행하는 것을 권장합니다.
+TFLite 내보내기는 macOS의 Python 3.13 이상에서 막히고, Core ML 내보내기는 Windows에서 되지 않습니다.
+그래서 Linux(예: Colab)에서 `--export both`로 두 모델을 한 번에 내보내는 것을 권장합니다.
 
 `--weights`에 이미 학습한 `.pt` 파일을 넘기면 학습을 건너뛰고 내보내기만 합니다.
 그래서 두 플랫폼 모델을 만들 때 학습은 한 번만 하면 됩니다.
 
 ```bash
-# macOS: 학습 후 iOS용 모델 내보내기 (학습 결과 best.pt 경로가 출력됩니다)
-python3 tool/train_dog_pose.py --export coreml
-# Linux(예: Colab): 같은 best.pt로 Android용 모델만 내보내기
-python3 tool/train_dog_pose.py --weights best.pt --export tflite
+# Colab: 학습한 best.pt로 두 플랫폼 모델을 한 번에 내보내기
+python3 tool/train_dog_pose.py --weights best.pt --export both
 ```
 
 내보내기 설정은 `ultralytics_yolo` 패키지의 공식 모델과 같습니다.

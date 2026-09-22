@@ -7,7 +7,7 @@ Usage:
 
 Outputs (pass one as `dogPoseModelPath`):
     Android: *_int8.tflite (TFLite export needs Linux, see ultralytics_yolo doc/models.md)
-    iOS:     *.mlpackage.zip (Core ML export needs macOS)
+    iOS:     *.mlpackage.zip (Core ML export is not supported on Windows)
 """
 
 import argparse
@@ -35,7 +35,7 @@ def main():
         "--export",
         choices=["tflite", "coreml", "both"],
         default="both",
-        help="tflite export is blocked on macOS Python 3.13+; coreml needs macOS",
+        help="tflite export is blocked on macOS Python 3.13+; coreml is not supported on Windows",
     )
     parser.add_argument("--weights", default=None, help="trained .pt to export without training")
     args = parser.parse_args()
