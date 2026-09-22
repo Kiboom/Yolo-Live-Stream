@@ -345,6 +345,11 @@ Android 설정은 `ultralytics_yolo` 공식 모델과 다릅니다.
 
 스크립트는 내보낸 TFLite의 입력과 출력 모양을 확인하고, 플러그인이 읽을 수 없는 모양이면 실패합니다.
 
+Ultralytics의 `export()`를 기본값으로 직접 호출해 내보낸 파일은 쓸 수 없습니다.
+TFLite는 입력이 `[1, 3, 640, 640]`, 출력이 `[1, 77, 8400]`으로 나와 Android에서 모델을 불러올 때 "Unexpected output feature size" 오류가 납니다.
+Core ML은 `.mlpackage` 폴더를 통째로 zip으로 묶어야 합니다. 폴더 안의 `model.mlmodel`과 `weight.bin`만 꺼내 쓰면 모델을 불러오지 못합니다.
+Colab에서 학습했다면 `best.pt`를 받아 이 스크립트의 `--weights`로 내보내 주세요.
+
 ### 으르렁 감지
 
 으르렁 감지는 수신 기기에서 받은 음성으로 분석합니다.
