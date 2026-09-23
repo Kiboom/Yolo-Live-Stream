@@ -1,4 +1,4 @@
-## 0.11.0
+## 0.12.0
 
 - 강아지 위험도 분석 추가. 수신 영상의 강아지와 사람 사이 거리, 자세, 시선, 긴장 신호, 으르렁 소리를 합쳐 위험도(`low`, `caution`, `high`)를 판정한다.
 - `LiveStreamingView`와 `LiveStreamingController`에 `dogPoseModelPath`, `enableGrowlDetection`(기본 false), `dogRiskAnalyzer`(기본 `RuleBasedDogRiskAnalyzer()`), `onDogRiskAnalyzed` 추가.
