@@ -6,6 +6,7 @@ import "package:yolo_live_stream/src/dog_risk_analyzer.dart";
 import "package:yolo_live_stream/src/growl_analyzer.dart";
 import "package:yolo_live_stream/src/live_streaming_connector.dart";
 import "package:yolo_live_stream/src/role.dart";
+import "package:yolo_live_stream/src/rule_based_dog_risk_analyzer.dart";
 import "package:yolo_live_stream/src/yolo_analyzer.dart";
 
 /// 영상 세션(WebRTC 연결 + 렌더러 + YOLO 분석기)을 소유하는 핸들.
@@ -157,10 +158,12 @@ class LiveStreamingController extends ChangeNotifier {
   @visibleForTesting
   void handleDetected(List<YOLOResult> detections) {
     onDetected?.call(detections);
-    final DogRiskReport report = DogRiskAnalyzer(thresholds: dogRiskThresholds).analyze(
-      detections: detections,
-      dogPoses: dogPoses,
-      growlScore: _growlAnalyzer?.growlScore,
+    final DogRiskReport report = RuleBasedDogRiskAnalyzer(thresholds: dogRiskThresholds).analyze(
+      DogRiskSignals(
+        detections: detections,
+        dogPoses: dogPoses,
+        sound: _growlAnalyzer?.soundScores,
+      ),
     );
     _dogRiskReport = report;
     onDogRiskAnalyzed?.call(report);

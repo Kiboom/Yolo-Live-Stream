@@ -10,4 +10,6 @@ export "src/live_streaming_connector.dart";
 export "src/live_streaming_view.dart";
 export "src/role.dart";
 export "src/role_switcher.dart";
+export "src/rule_based_dog_risk_analyzer.dart";
+export "src/sound_scores.dart";
 export "src/yolo_analyzer.dart";
