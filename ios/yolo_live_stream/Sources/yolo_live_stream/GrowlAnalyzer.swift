@@ -86,6 +86,10 @@ final class GrowlAnalyzer: NSObject, FlutterStreamHandler, ExternalAudioProcessi
           let interpreter = try Interpreter(modelPath: modelPath)
           try interpreter.resizeInput(at: 0, to: [GrowlAnalyzer.windowLength])
           try interpreter.allocateTensors()
+          let output = try interpreter.output(at: 0)
+          guard output.dataType == .float32, output.shape.dimensions.reduce(1, *) == GrowlAnalyzer.classCount else {
+            throw NSError(domain: "GrowlAnalyzer", code: 0, userInfo: [NSLocalizedDescriptionKey: "Expected \(GrowlAnalyzer.classCount) float32 scores but the model outputs \(output.dataType) \(output.shape.dimensions)"])
+          }
           self.interpreter = interpreter
         }
         DispatchQueue.main.async { result(nil) }
@@ -224,10 +228,6 @@ final class GrowlAnalyzer: NSObject, FlutterStreamHandler, ExternalAudioProcessi
       try interpreter.copy(input, toInputAt: 0)
       try interpreter.invoke()
       let output = try interpreter.output(at: 0)
-      guard output.dataType == .float32, output.shape.dimensions.reduce(1, *) == GrowlAnalyzer.classCount else {
-        NSLog("GrowlAnalyzer expected \(GrowlAnalyzer.classCount) float32 scores but got \(output.dataType) \(output.shape.dimensions)")
-        return
-      }
       // Tensor.data is a fresh copy of the interpreter buffer, so the next inference cannot overwrite it before it is sent.
       let scores = FlutterStandardTypedData(float32: output.data)
       DispatchQueue.main.async { [weak self] in
