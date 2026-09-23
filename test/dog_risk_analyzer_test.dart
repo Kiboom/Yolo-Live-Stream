@@ -1,8 +1,11 @@
+import "dart:typed_data";
 import "dart:ui";
 
 import "package:flutter_test/flutter_test.dart";
 import "package:ultralytics_yolo/ultralytics_yolo.dart";
 import "package:yolo_live_stream/src/dog_risk_analyzer.dart";
+import "package:yolo_live_stream/src/rule_based_dog_risk_analyzer.dart";
+import "package:yolo_live_stream/src/sound_scores.dart";
 
 // 강아지 박스 긴 변은 200px. 머리는 오른쪽(x 증가 방향)을 향한다.
 const Rect dogBox = Rect.fromLTRB(100, 100, 300, 260);
@@ -51,15 +54,23 @@ YOLOResult dogPose(Map<int, Offset> points, {Rect box = dogBox, double confidenc
 DogRiskReport analyze({
   Rect? personBox = nearPersonBox,
   Map<int, Offset>? points,
-  double? growlScore,
-}) => const DogRiskAnalyzer().analyze(
-  detections: [
-    detection("dog", dogBox),
-    if (personBox != null) detection("person", personBox),
-  ],
-  dogPoses: points == null ? null : [dogPose(points)],
-  growlScore: growlScore,
-);
+  Map<String, double>? sound,
+}) {
+  final scores = Float32List(SoundScores.labels.length);
+  for (final MapEntry(key: label, value: score) in {...?sound}.entries) {
+    scores[SoundScores.labels.indexOf(label)] = score;
+  }
+  return const RuleBasedDogRiskAnalyzer().analyze(
+    DogRiskSignals(
+      detections: [
+        detection("dog", dogBox),
+        if (personBox != null) detection("person", personBox),
+      ],
+      dogPoses: points == null ? null : [dogPose(points)],
+      sound: sound == null ? null : SoundScores(scores),
+    ),
+  );
+}
 
 void main() {
   group("거리", () {
@@ -77,7 +88,9 @@ void main() {
     });
 
     test("강아지가 없으면 null", () {
-      final report = const DogRiskAnalyzer().analyze(detections: [detection("person", nearPersonBox)]);
+      final report = const RuleBasedDogRiskAnalyzer().analyze(
+        DogRiskSignals(detections: [detection("person", nearPersonBox)]),
+      );
       expect(report.distance, isNull);
       expect(report.level, DogRiskLevel.low);
     });
@@ -88,16 +101,18 @@ void main() {
         for (final entry in standingPoints.entries) entry.key: entry.value.translate(800, 0),
         22: const Offset(1030, 240),
       };
-      final report = const DogRiskAnalyzer().analyze(
-        detections: [
-          detection("dog", otherDogBox),
-          detection("dog", dogBox),
-          detection("person", nearPersonBox),
-        ],
-        dogPoses: [
-          dogPose(lyingElsewhere, box: otherDogBox),
-          dogPose(standingPoints),
-        ],
+      final report = const RuleBasedDogRiskAnalyzer().analyze(
+        DogRiskSignals(
+          detections: [
+            detection("dog", otherDogBox),
+            detection("dog", dogBox),
+            detection("person", nearPersonBox),
+          ],
+          dogPoses: [
+            dogPose(lyingElsewhere, box: otherDogBox),
+            dogPose(standingPoints),
+          ],
+        ),
       );
       expect(report.distance, closeTo(0.1, 1e-9));
       expect(report.posture, DogPosture.standing);
@@ -142,9 +157,11 @@ void main() {
     });
 
     test("키포인트 신뢰도가 기준 미만이면 unknown", () {
-      final report = const DogRiskAnalyzer().analyze(
-        detections: [detection("dog", dogBox)],
-        dogPoses: [dogPose(standingPoints, confidence: 0.3)],
+      final report = const RuleBasedDogRiskAnalyzer().analyze(
+        DogRiskSignals(
+          detections: [detection("dog", dogBox)],
+          dogPoses: [dogPose(standingPoints, confidence: 0.3)],
+        ),
       );
       expect(report.posture, DogPosture.unknown);
       expect(report.isTailRaised, isNull);
@@ -155,9 +172,11 @@ void main() {
     });
 
     test("강아지 박스와 겹치는 포즈가 없으면 unknown이고 나머지는 null", () {
-      final report = const DogRiskAnalyzer().analyze(
-        detections: [detection("dog", dogBox), detection("person", nearPersonBox)],
-        dogPoses: [dogPose(standingPoints, box: const Rect.fromLTRB(900, 100, 1100, 260))],
+      final report = const RuleBasedDogRiskAnalyzer().analyze(
+        DogRiskSignals(
+          detections: [detection("dog", dogBox), detection("person", nearPersonBox)],
+          dogPoses: [dogPose(standingPoints, box: const Rect.fromLTRB(900, 100, 1100, 260))],
+        ),
       );
       expect(report.posture, DogPosture.unknown);
       expect(report.isFacingPerson, isNull);
@@ -259,7 +278,7 @@ void main() {
     final tensePoints = {...standingPoints, 13: const Offset(110, 110)};
 
     test("가까움과 으르렁이면 high", () {
-      expect(analyze(growlScore: 0.8).level, DogRiskLevel.high);
+      expect(analyze(sound: {"Growling": 0.8}).level, DogRiskLevel.high);
     });
 
     test("가까움, 사람 쪽을 봄, 긴장 신호면 high", () {
@@ -284,18 +303,30 @@ void main() {
     });
 
     test("멀리서 으르렁만 있으면 caution, 기준값과 같으면 으르렁으로 본다", () {
-      expect(analyze(personBox: farPersonBox, growlScore: 0.5).level, DogRiskLevel.caution);
+      final report = analyze(
+        personBox: farPersonBox,
+        sound: {"Growling": 0.5},
+      );
+      expect(report.level, DogRiskLevel.caution);
     });
 
     test("멀리서 사람 쪽을 보며 긴장해도 low", () {
-      final report = analyze(personBox: farPersonBox, points: tensePoints, growlScore: 0.2);
+      final report = analyze(
+        personBox: farPersonBox,
+        points: tensePoints,
+        sound: {"Growling": 0.2},
+      );
       expect(report.isFacingPerson, isTrue);
       expect(report.isTailRaised, isTrue);
       expect(report.level, DogRiskLevel.low);
     });
 
     test("사람이 없으면 으르렁이어도 caution", () {
-      expect(analyze(personBox: null, growlScore: 0.9).level, DogRiskLevel.caution);
+      final report = analyze(
+        personBox: null,
+        sound: {"Growling": 0.9},
+      );
+      expect(report.level, DogRiskLevel.caution);
     });
 
     test("아무 신호가 없으면 low", () {
@@ -303,12 +334,30 @@ void main() {
     });
   });
 
+  group("소리 점수", () {
+    test("소리 점수가 없으면 으르렁 점수는 null이고 으르렁으로 보지 않는다", () {
+      final report = analyze(personBox: farPersonBox);
+      expect(report.growlScore, isNull);
+      expect(report.level, DogRiskLevel.low);
+    });
+
+    test("Growling이 아닌 소리는 점수가 높아도 으르렁으로 보지 않는다", () {
+      final report = analyze(
+        personBox: farPersonBox,
+        sound: {"Bark": 0.9},
+      );
+      expect(report.growlScore, 0);
+      expect(report.level, DogRiskLevel.low);
+    });
+  });
+
   test("포즈 모델이 없으면 자세, 시선, 긴장 신호는 null이고 으르렁 점수는 그대로 담는다", () {
-    final report = analyze(growlScore: 0.3);
+    final report = analyze(sound: {"Growling": 0.3});
     expect(report.posture, isNull);
     expect(report.isFacingPerson, isNull);
     expect(report.isTailRaised, isNull);
     expect(report.isHeadLoweredForward, isNull);
-    expect(report.growlScore, 0.3);
+    // 점수는 Float32List에 담기므로 float32 정밀도로 반올림된다.
+    expect(report.growlScore, closeTo(0.3, 1e-6));
   });
 }
