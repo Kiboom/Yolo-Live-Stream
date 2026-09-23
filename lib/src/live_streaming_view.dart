@@ -417,7 +417,7 @@ class _LiveStreamingViewState extends State<LiveStreamingView> {
   // controller를 넘기지 않은 경우 위젯이 직접 만들어 소유하는 세션.
   LiveStreamingController? _internalController;
 
-  LiveStreamingController get _session => widget.controller ?? _internalController!;
+  late LiveStreamingController _session;
 
   final TextEditingController ipEditingController = TextEditingController(); // 수신자가 입력하는 송신자 IP
 
@@ -430,24 +430,26 @@ class _LiveStreamingViewState extends State<LiveStreamingView> {
 
   // 외부 controller가 없으면 위젯 설정으로 내부 controller를 만든다(단독 사용 동작 유지).
   void _attachSession() {
+    _session = widget.controller ??
+        LiveStreamingController(
+          role: widget.role,
+          quality: widget.quality,
+          frameRate: widget.frameRate,
+          enableSpeaker: widget.enableSpeaker,
+          enableDetection: widget.enableDetection,
+          model: widget.model,
+          customModelPath: widget.customModelPath,
+          detectionInterval: widget.detectionInterval,
+          dogPoseModelPath: widget.dogPoseModelPath,
+          enableGrowlDetection: widget.enableGrowlDetection,
+          dogRiskAnalyzer: widget.dogRiskAnalyzer,
+          onDetected: widget.onDetected,
+          onDogRiskAnalyzed: widget.onDogRiskAnalyzed,
+          onLocalIpReady: widget.onLocalIpReady,
+          onError: _showMessage,
+        );
     if (widget.controller == null) {
-      _internalController = LiveStreamingController(
-        role: widget.role,
-        quality: widget.quality,
-        frameRate: widget.frameRate,
-        enableSpeaker: widget.enableSpeaker,
-        enableDetection: widget.enableDetection,
-        model: widget.model,
-        customModelPath: widget.customModelPath,
-        detectionInterval: widget.detectionInterval,
-        dogPoseModelPath: widget.dogPoseModelPath,
-        enableGrowlDetection: widget.enableGrowlDetection,
-        dogRiskAnalyzer: widget.dogRiskAnalyzer,
-        onDetected: widget.onDetected,
-        onDogRiskAnalyzed: widget.onDogRiskAnalyzed,
-        onLocalIpReady: widget.onLocalIpReady,
-        onError: _showMessage,
-      );
+      _internalController = _session;
     }
     _session.addListener(_handleUpdate);
   }
@@ -467,9 +469,7 @@ class _LiveStreamingViewState extends State<LiveStreamingView> {
 
     // controller 교체(내부<->외부 전환 포함).
     if (oldWidget.controller != widget.controller) {
-      final LiveStreamingController previous =
-          oldWidget.controller ?? _internalController!;
-      previous.removeListener(_handleUpdate);
+      _session.removeListener(_handleUpdate);
       final LiveStreamingController? oldInternal = _internalController;
       _internalController = null;
       _attachSession();
@@ -480,7 +480,7 @@ class _LiveStreamingViewState extends State<LiveStreamingView> {
 
     // 내부 세션만 쓰는 경우, role이 바뀌면 새 역할로 세션을 다시 만든다(역할 전환 지원).
     if (widget.controller == null && oldWidget.role != widget.role) {
-      final LiveStreamingController old = _internalController!;
+      final LiveStreamingController old = _session;
       old.removeListener(_handleUpdate);
       _internalController = null;
       _attachSession();
@@ -494,11 +494,12 @@ class _LiveStreamingViewState extends State<LiveStreamingView> {
     }
 
     // autoStart 수신자는 송신자 IP가 바뀌면 새 IP로 다시 연결한다.
+    final String? senderIp = widget.senderIp;
     if (widget.autoStart &&
         _session.role == Role.receiver &&
-        widget.senderIp != null &&
-        oldWidget.senderIp != widget.senderIp) {
-      _restartReceiver();
+        senderIp != null &&
+        oldWidget.senderIp != senderIp) {
+      _restartReceiver(senderIp);
     }
   }
 
@@ -508,16 +509,17 @@ class _LiveStreamingViewState extends State<LiveStreamingView> {
   }
 
   Future<void> _autoStart() async {
+    final String? senderIp = widget.senderIp;
     if (_session.role == Role.sender) {
       await _session.startAsSender();
-    } else if (widget.senderIp != null) {
-      await _session.startAsReceiver(widget.senderIp!);
+    } else if (senderIp != null) {
+      await _session.startAsReceiver(senderIp);
     }
   }
 
-  Future<void> _restartReceiver() async {
+  Future<void> _restartReceiver(String senderIp) async {
     await _session.stop();
-    await _session.startAsReceiver(widget.senderIp!);
+    await _session.startAsReceiver(senderIp);
   }
 
   // 시작 버튼용. 역할에 맞는 시작을 호출한다.
