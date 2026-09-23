@@ -25,9 +25,9 @@ internal const val YAMNET_WINDOW_SAMPLES = 15600
 internal const val YAMNET_HOP_SAMPLES = 8000
 internal const val YAMNET_CLASS_COUNT = 521
 
-// Copied so the next inference can't overwrite an array already sent to Dart.
-internal fun copyClassScores(output: FloatArray): FloatArray? =
-    if (output.size == YAMNET_CLASS_COUNT) output.copyOf() else null
+internal fun requireClassCount(scoreCount: Int) {
+    check(scoreCount == YAMNET_CLASS_COUNT) { "YAMNet outputs $scoreCount scores instead of $YAMNET_CLASS_COUNT" }
+}
 
 /** Converts one 10 ms WebRTC frame (FloatS16 range) to 16 kHz mono floats in -1..1. Returns the number written to [out]. */
 internal fun resampleTo16k(src: FloatArray, count: Int, out: FloatArray): Int {
@@ -219,12 +219,8 @@ class GrowlAnalyzer(private val context: Context, messenger: BinaryMessenger) :
             val outputs = outputBuffers!!
             inputs[0].writeFloat(input)
             compiled.run(inputs, outputs)
-            val output = outputs[0].readFloat()
-            val scores = copyClassScores(output)
-            if (scores == null) {
-                Log.w(TAG, "YAMNet returned ${output.size} scores instead of $YAMNET_CLASS_COUNT; not sending")
-                return
-            }
+            // Copied so the next inference can't overwrite an array already sent to Dart.
+            val scores = outputs[0].readFloat().copyOf()
             mainHandler.post { if (session.isCurrent(sessionId)) eventSink?.success(scores) }
         } catch (e: Throwable) {
             Log.w(TAG, "YAMNet inference failed: ${e.message}")
@@ -237,8 +233,16 @@ class GrowlAnalyzer(private val context: Context, messenger: BinaryMessenger) :
         val assetPath = FlutterInjector.instance().flutterLoader()
             .getLookupKeyForAsset("assets/yamnet.tflite", "yolo_live_stream")
         val compiled = CompiledModel.create(context.assets, assetPath, CompiledModel.Options(Accelerator.CPU))
+        val outputs = compiled.createOutputBuffers()
+        try {
+            requireClassCount(outputs[0].readFloat().size)
+        } catch (e: IllegalStateException) {
+            outputs.forEach { runCatching { it.close() } }
+            compiled.close()
+            throw e
+        }
         inputBuffers = compiled.createInputBuffers()
-        outputBuffers = compiled.createOutputBuffers()
+        outputBuffers = outputs
         model = compiled
         return compiled
     }

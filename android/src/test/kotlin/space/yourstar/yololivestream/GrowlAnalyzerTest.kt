@@ -3,8 +3,8 @@ package space.yourstar.yololivestream
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 internal class GrowlAnalyzerTest {
@@ -77,21 +77,15 @@ internal class GrowlAnalyzerTest {
     }
 
     @Test
-    fun copyClassScores_returnsAll521ScoresAsIndependentCopy() {
-        val output = FloatArray(YAMNET_CLASS_COUNT) { it / YAMNET_CLASS_COUNT.toFloat() }
-
-        val scores = copyClassScores(output)!!
-        output.fill(0f)
-
-        assertEquals(YAMNET_CLASS_COUNT, scores.size)
-        assertEquals(74 / 521f, scores[74])
-        assertEquals(520 / 521f, scores.last())
+    fun requireClassCount_accepts521Scores() {
+        requireClassCount(521)
     }
 
     @Test
-    fun copyClassScores_rejectsOutputThatIsNot521Scores() {
-        assertNull(copyClassScores(FloatArray(YAMNET_CLASS_COUNT - 1)))
-        assertNull(copyClassScores(FloatArray(1024)))
+    fun requireClassCount_failsModelLoadWhenOutputIsNot521Scores() {
+        val error = assertFailsWith<IllegalStateException> { requireClassCount(1024) }
+        assertEquals("YAMNet outputs 1024 scores instead of 521", error.message)
+        assertFailsWith<IllegalStateException> { requireClassCount(520) }
     }
 
     @Test
