@@ -499,7 +499,7 @@ class _LiveStreamingViewState extends State<LiveStreamingView> {
         _session.role == Role.receiver &&
         senderIp != null &&
         oldWidget.senderIp != senderIp) {
-      _restartReceiver(senderIp);
+      _restartReceiver();
     }
   }
 
@@ -517,8 +517,10 @@ class _LiveStreamingViewState extends State<LiveStreamingView> {
     }
   }
 
-  Future<void> _restartReceiver(String senderIp) async {
+  Future<void> _restartReceiver() async {
     await _session.stop();
+    final String? senderIp = widget.senderIp;
+    if (senderIp == null) return;
     await _session.startAsReceiver(senderIp);
   }
 
