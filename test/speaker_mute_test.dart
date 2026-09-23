@@ -321,6 +321,50 @@ void main() {
     await expectLater(analyzer.start(), throwsA(isA<ModelLoadingException>()));
     expect(errors, isEmpty);
   });
+  test("clears dog poses when the pose model fails to load after stop", () async {
+    const MethodChannel yoloChannel = MethodChannel("yolo_single_image_channel");
+    final List<MethodChannel> poseChannels = [];
+    final Completer<void> poseLoadStarted = Completer<void>();
+    final Completer<void> poseLoadGate = Completer<void>();
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(yoloChannel, null);
+      for (final MethodChannel poseChannel in poseChannels) {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(poseChannel, null);
+      }
+    });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(yoloChannel, (MethodCall call) async {
+      if (call.method == "createInstance") {
+        final MethodChannel poseChannel = MethodChannel("yolo_single_image_channel_${(call.arguments as Map)["instanceId"]}");
+        poseChannels.add(poseChannel);
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(poseChannel, (MethodCall call) async {
+          if (call.method != "loadModel") return <String, dynamic>{};
+          poseLoadStarted.complete();
+          await poseLoadGate.future;
+          throw PlatformException(code: "MODEL_NOT_FOUND");
+        });
+        return null;
+      }
+      if (call.method == "loadModel") return true;
+      return <String, dynamic>{};
+    });
+    final List<String> errors = [];
+    final YoloAnalyzer analyzer = YoloAnalyzer(
+      onUpdate: () {},
+      onError: errors.add,
+      getRemoteTrack: () => null,
+      customModelPath: "/models/detect.tflite",
+      dogPoseModelPath: "/models/dog_pose.tflite",
+      interval: const Duration(milliseconds: 10),
+    );
+    final Future<void> starting = analyzer.start();
+    await poseLoadStarted.future;
+    analyzer.stop();
+    expect(analyzer.dogPoses, isEmpty);
+    poseLoadGate.complete();
+    await starting;
+    expect(analyzer.dogPoses, isNull);
+    expect(errors, hasLength(1));
+  });
 }
 
 class FakeVideoTrack implements MediaStreamTrack {

@@ -97,6 +97,7 @@ class YoloAnalyzer {
       await dogPoseYolo.loadModel();
     } catch (error) {
       _dogPoseYolo = null;
+      dogPoses = null;
       onError?.call("포즈 모델 로드 실패: $error");
       await dogPoseYolo.dispose();
     }
