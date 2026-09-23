@@ -14,16 +14,19 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final TestDefaultBinaryMessenger messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   final List<MethodCall> growlCalls = [];
+  final List<String> nativeCalls = [];
   final List<SoundScores> receivedScores = [];
   MockStreamHandlerEventSink? scoresSink;
   int updateCount = 0;
   setUp(() {
     growlCalls.clear();
+    nativeCalls.clear();
     receivedScores.clear();
     scoresSink = null;
     updateCount = 0;
     messenger.setMockMethodCallHandler(growlChannel, (MethodCall call) async {
       growlCalls.add(call);
+      nativeCalls.add(call.method);
       return null;
     });
     messenger.setMockStreamHandler(
@@ -31,6 +34,9 @@ void main() {
       MockStreamHandler.inline(
         onListen: (Object? arguments, MockStreamHandlerEventSink events) {
           scoresSink = events;
+        },
+        onCancel: (Object? arguments) {
+          nativeCalls.add("cancel");
         },
       ),
     );
@@ -108,16 +114,12 @@ void main() {
     expect(analyzer.soundScores, isNull);
     expect(receivedScores, hasLength(1));
     expect(updateCount, stoppedUpdateCount);
-    // 구독이 없을 때 온 메시지는 채널 버퍼에 남아 다음 테스트의 구독으로 넘어가므로 비운다.
-    messenger.setMessageHandler(scoresChannel.name, (ByteData? message) async => null);
-    await pumpEventQueue();
-    messenger.setMessageHandler(scoresChannel.name, null);
   });
 
-  test("stop 도중 네이티브가 보낸 점수는 다음 start에도 반영하지 않는다", () async {
+  test("stop은 네이티브 분석을 멈춘 뒤 구독을 해제하고, 그사이 온 점수는 버린다", () async {
     final GrowlAnalyzer analyzer = await startAnalyzer();
     messenger.setMockMethodCallHandler(growlChannel, (MethodCall call) async {
-      growlCalls.add(call);
+      nativeCalls.add(call.method);
       if (call.method == "stop") {
         scoresSink?.success(createGrowlingScores(0.9));
         await pumpEventQueue();
@@ -125,12 +127,9 @@ void main() {
       return null;
     });
     await analyzer.stop();
-    await analyzer.start(muteOutput: true);
-    await pumpEventQueue();
+    expect(nativeCalls, ["start", "stop", "cancel"]);
     expect(analyzer.soundScores, isNull);
     expect(receivedScores, isEmpty);
-    await sendScores(createGrowlingScores(0.25));
-    expect(analyzer.soundScores?["Growling"], 0.25);
   });
 
   test("무시한 이벤트는 처음 한 번만 debugPrint로 알린다", () async {
