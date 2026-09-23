@@ -23,7 +23,11 @@ import java.util.concurrent.atomic.AtomicInteger
 internal const val YAMNET_SAMPLE_RATE = 16000
 internal const val YAMNET_WINDOW_SAMPLES = 15600
 internal const val YAMNET_HOP_SAMPLES = 8000
-internal const val YAMNET_GROWLING_INDEX = 74
+internal const val YAMNET_CLASS_COUNT = 521
+
+// Copied so the next inference can't overwrite an array already sent to Dart.
+internal fun copyClassScores(output: FloatArray): FloatArray? =
+    if (output.size == YAMNET_CLASS_COUNT) output.copyOf() else null
 
 /** Converts one 10 ms WebRTC frame (FloatS16 range) to 16 kHz mono floats in -1..1. Returns the number written to [out]. */
 internal fun resampleTo16k(src: FloatArray, count: Int, out: FloatArray): Int {
@@ -215,8 +219,13 @@ class GrowlAnalyzer(private val context: Context, messenger: BinaryMessenger) :
             val outputs = outputBuffers!!
             inputs[0].writeFloat(input)
             compiled.run(inputs, outputs)
-            val score = outputs[0].readFloat()[YAMNET_GROWLING_INDEX].toDouble()
-            mainHandler.post { if (session.isCurrent(sessionId)) eventSink?.success(score) }
+            val output = outputs[0].readFloat()
+            val scores = copyClassScores(output)
+            if (scores == null) {
+                Log.w(TAG, "YAMNet returned ${output.size} scores instead of $YAMNET_CLASS_COUNT; not sending")
+                return
+            }
+            mainHandler.post { if (session.isCurrent(sessionId)) eventSink?.success(scores) }
         } catch (e: Throwable) {
             Log.w(TAG, "YAMNet inference failed: ${e.message}")
         } finally {
