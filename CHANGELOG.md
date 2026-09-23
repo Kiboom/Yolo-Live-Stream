@@ -1,8 +1,15 @@
 ## 0.11.0
 
 - 강아지 위험도 분석 추가. 수신 영상의 강아지와 사람 사이 거리, 자세, 시선, 긴장 신호, 으르렁 소리를 합쳐 위험도(`low`, `caution`, `high`)를 판정한다.
-- `LiveStreamingView`와 `LiveStreamingController`에 `dogPoseModelPath`, `enableGrowlDetection`(기본 false), `dogRiskThresholds`, `onDogRiskAnalyzed` 추가.
-- `DogRiskReport`, `DogRiskLevel`, `DogPosture`, `DogRiskThresholds` 공개.
+- `LiveStreamingView`와 `LiveStreamingController`에 `dogPoseModelPath`, `enableGrowlDetection`(기본 false), `dogRiskAnalyzer`(기본 `RuleBasedDogRiskAnalyzer()`), `onDogRiskAnalyzed` 추가.
+- 판정 로직을 앱이 주입할 수 있다. `DogRiskAnalyzer`를 상속한 클래스를 `dogRiskAnalyzer`로 넘기면 기본 규칙 대신 그 로직으로 판정한다.
+- 플러그인은 세션 동안 같은 판정 로직 인스턴스를 쓰므로 판정 사이에 기록을 쌓을 수 있다. 연결을 멈추거나 다시 시작하면 `reset()`을 부른다.
+- 영상 프레임을 분석할 때와 소리 점수가 들어올 때 모두 판정한다. 탐지를 껐거나 영상이 없어도 소리가 오면 판정한다.
+- 판정 로직이 예외를 던지면 위험도를 비우고 `onError`로 `위험도 판정 실패: ...`를 한 번 알린다. 판정이 한 번 성공하기 전까지는 다시 알리지 않는다.
+- 기본 규칙은 `RuleBasedDogRiskAnalyzer`로 공개. 임계값은 `RuleBasedDogRiskAnalyzer(thresholds: DogRiskThresholds(...))`로 넘긴다.
+- 판정 입력 `DogRiskSignals` 공개. detect 모델 결과 전체(COCO 80종), dog-pose 모델 결과, 소리 점수를 담는다.
+- 소리 점수 `SoundScores` 공개. 으르렁 점수 하나가 아니라 YAMNet 521종 점수를 모두 넘기며, `signals.sound?["Growling"]`처럼 레이블 이름으로 꺼낸다. 전체 레이블은 `SoundScores.labels`에 있다.
+- `DogRiskReport`, `DogRiskLevel`, `DogPosture`, `DogRiskThresholds`, `DogRiskAnalyzer` 공개. `DogRiskReport`를 상속하면 앱만의 값을 담아 돌려줄 수 있다.
 - 포즈 모델은 사용자가 직접 학습해 넘긴다. 학습 스크립트 `tool/train_dog_pose.py` 추가. 포즈 모델이 없으면 거리와 으르렁만으로 판정한다.
 - 학습 스크립트는 Android용 TFLite를 동적 int8, end-to-end 출력, NHWC 입력으로 내보내고, 플러그인이 읽을 수 없는 모양이면 실패한다. 키포인트가 24개라 공식 설정(`end2end=False`)으로 내보내면 Android에서 모델을 불러오지 못한다.
 - example 앱에 학습한 dog-pose 모델(`example/assets/models/dog_pose.tflite`, `dog_pose.mlpackage.zip`)을 넣었다.
@@ -12,13 +19,13 @@
 
 ## 0.10.0
 
-- 반복 연결/종료 후 YOLO 탐지가 멈추던 버그 수정. 종료가 분석 도중(captureFrame·predict)에 일어나 트랙이 폐기되면 in-flight 호출이 끝나지 않아 `_isBusy`가 true로 박히고, 재연결해도 매 프레임이 즉시 건너뛰어졌다. `stop`에서 `_isBusy`를 리셋해 재시작이 항상 깨끗하도록 한다.
+- 반복 연결/종료 후 YOLO 탐지가 멈추던 버그 수정. 종료가 분석 도중(captureFrame, predict)에 일어나 트랙이 폐기되면 in-flight 호출이 끝나지 않아 `_isBusy`가 true로 박히고, 재연결해도 매 프레임이 즉시 건너뛰어졌다. `stop`에서 `_isBusy`를 리셋해 재시작이 항상 깨끗하도록 한다.
 - `enableSpeaker: false`일 때 앱 전체 소리가 음소거되던 버그 수정. flutter_webrtc 기본값(MODE_IN_COMMUNICATION + 오디오 포커스 점유)이 기기 오디오를 통신 모드로 가져가 앱의 TTS 등 미디어 소리까지 죽였다. 수신 음성을 끈 경우 세션을 미디어 오디오 모드로 시작해 앱 소리를 건드리지 않는다.
 
 ## 0.9.0
 
-- 0.8.0의 facing 기반 자동 미러를 제거하고, 수동 좌우반전으로 대체. iOS·Android 모두에서 연결마다 영상 미러가 들쭉날쭉하던 문제를 사용자 토글로 해결한다.
-- `LiveStreamingController.mirror`·`setMirror`·`toggleMirror` 추가. 한쪽이 토글하면 상대에게 신호로 전달돼 양쪽 표시(영상·탐지 박스)가 함께 뒤집힌다.
+- 0.8.0의 facing 기반 자동 미러를 제거하고, 수동 좌우반전으로 대체. iOS, Android 모두에서 연결마다 영상 미러가 들쭉날쭉하던 문제를 사용자 토글로 해결한다.
+- `LiveStreamingController.mirror`, `setMirror`, `toggleMirror` 추가. 한쪽이 토글하면 상대에게 신호로 전달돼 양쪽 표시(영상, 탐지 박스)가 함께 뒤집힌다.
 - `LiveStreamingView.showMirrorButton`(기본 false) 추가. 켜면 좌우반전 토글 버튼이 보인다.
 - `LiveStreamingView.showPip`(기본 true) 추가. false면 우상단 보조 영상(PiP)을 숨긴다.
 
@@ -29,10 +36,10 @@
 
 ## 0.7.0
 
-- `LiveStreamingController`가 영상 세션(WebRTC 연결·렌더러·YOLO 분석기)을 직접 소유하도록 변경. 같은 controller를 여러 `LiveStreamingView`에 넘기면 화면이 바뀌어도 같은 연결을 끊김 없이 이어서 그린다(예: 작은 카드에서 전체화면으로 전환).
+- `LiveStreamingController`가 영상 세션(WebRTC 연결, 렌더러, YOLO 분석기)을 직접 소유하도록 변경. 같은 controller를 여러 `LiveStreamingView`에 넘기면 화면이 바뀌어도 같은 연결을 끊김 없이 이어서 그린다(예: 작은 카드에서 전체화면으로 전환).
 - `LiveStreamingView`는 controller가 있으면 그 세션을 그리기만 한다. controller를 넘기지 않으면 위젯이 내부 세션을 만들어 단독으로 동작하므로 기존 사용 방식은 그대로 호환된다.
-- 세션 설정(quality·enableSpeaker·enableDetection·model·customModelPath·detectionInterval·onDetected·onLocalIpReady·onError)을 `LiveStreamingController` 생성자로도 받는다.
-- `LiveStreamingController`에 `detections`·`isConnected`·`isStarted` 등 세션 상태 getter와 `prepare`·`start` 추가. 위젯 연결 여부에 의존하던 `isAttached`와 시작 보류(pending start) 동작은 제거.
+- 세션 설정(quality, enableSpeaker, enableDetection, model, customModelPath, detectionInterval, onDetected, onLocalIpReady, onError)을 `LiveStreamingController` 생성자로도 받는다.
+- `LiveStreamingController`에 `detections`, `isConnected`, `isStarted` 등 세션 상태 getter와 `prepare`, `start` 추가. 위젯 연결 여부에 의존하던 `isAttached`와 시작 보류(pending start) 동작은 제거.
 
 ## 0.6.0
 

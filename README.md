@@ -71,14 +71,14 @@ LiveStreamingView(
   onLocalIpReady: null,                      // (String ip) { ... } 송신자 자기 IP 콜백
   dogPoseModelPath: null,                    // 직접 학습한 dog-pose 모델 경로(형식은 customModelPath와 같음)
   enableGrowlDetection: false,               // true면 수신 음성에서 으르렁 소리를 감지
-  dogRiskThresholds: DogRiskThresholds(),    // 강아지 위험도 판정 임계값
+  dogRiskAnalyzer: RuleBasedDogRiskAnalyzer(), // 강아지 위험도 판정 로직(직접 만든 DogRiskAnalyzer로 교체 가능)
   onDogRiskAnalyzed: null,                   // (DogRiskReport report) { ... } 강아지 위험도 콜백
 );
 ```
 
 ### 1-1) 커스텀 UI로 쓰기 (컨트롤 패널 없이)
 
-앱에 고유한 IP 입력·시작/종료 UI가 있으면 `showControlPanel: false`로 내장 UI(IP 입력·버튼·상태 배지·PiP·카메라 전환 버튼)를 끄고 영상+탐지 오버레이만 띄울 수 있습니다. 이땐 시작/종료를 아래 두 방법으로 제어합니다.
+앱에 고유한 IP 입력, 시작/종료 UI가 있으면 `showControlPanel: false`로 내장 UI(IP 입력, 버튼, 상태 배지, PiP, 카메라 전환 버튼)를 끄고 영상+탐지 오버레이만 띄울 수 있습니다. 이땐 시작/종료를 아래 두 방법으로 제어합니다.
 
 **자동 시작 (`autoStart`)**: 위젯이 화면에 올라오면 자동으로 연결하고, 사라지면 종료합니다. 수신자는 `senderIp`가 필요합니다.
 
@@ -256,8 +256,12 @@ flutter:
 
 수신 영상에서 강아지와 사람을 찾고, 강아지가 지금 사람에게 위협이 될 만한 상황인지 판정합니다.
 결과는 `onDogRiskAnalyzed` 콜백으로 `DogRiskReport`를 받습니다.
+판정은 기본 규칙(`RuleBasedDogRiskAnalyzer`)이 맡습니다.
+앱이 직접 만든 판정 로직으로 바꿀 수도 있습니다([판정 로직 바꾸기](#판정-로직-바꾸기)).
 
 ### 판정 항목
+
+아래 판정 항목과 위험도 규칙은 기본 규칙(`RuleBasedDogRiskAnalyzer`)의 동작입니다.
 
 | 항목 | 필드 | 판정 방법 |
 | --- | --- | --- |
@@ -280,6 +284,7 @@ flutter:
 "으르렁"은 `growlScore`가 `growlScore` 임계값 이상인 경우입니다.
 "긴장 신호"는 꼬리가 들렸거나 머리를 낮추고 앞으로 쏠린 경우입니다.
 긴장 신호는 강아지가 가까이 있으면서 사람 쪽을 볼 때만 위험도를 올립니다.
+`nearDistance`, `growlScore`, `facingAngleDegrees`는 `DogRiskThresholds`의 임계값입니다.
 
 ### 포즈 모델이 없을 때
 
@@ -297,7 +302,9 @@ LiveStreamingView(
   dogPoseModelPath: Platform.isIOS
       ? "assets/models/dog_pose.mlpackage.zip"
       : "assets/models/dog_pose.tflite",
-  dogRiskThresholds: const DogRiskThresholds(nearDistance: 0.5, growlScore: 0.5),
+  dogRiskAnalyzer: const RuleBasedDogRiskAnalyzer(
+    thresholds: DogRiskThresholds(nearDistance: 0.5, growlScore: 0.5),
+  ),
   onDogRiskAnalyzed: (DogRiskReport report) {
     if (report.level == DogRiskLevel.high) {
       // 보호자에게 알림
@@ -305,6 +312,106 @@ LiveStreamingView(
   },
 );
 ```
+
+### 판정 로직 바꾸기
+
+`DogRiskAnalyzer`를 상속한 클래스를 만들어 `dogRiskAnalyzer`로 넘기면 판정 로직을 바꿀 수 있습니다.
+넘기지 않으면 기본 규칙(`RuleBasedDogRiskAnalyzer`)을 씁니다.
+`LiveStreamingController`에도 같은 이름의 매개변수가 있습니다.
+
+| 메서드 | 플러그인이 부르는 때 | 할 일 |
+| --- | --- | --- |
+| `analyze(DogRiskSignals signals)` | 영상 프레임을 분석했을 때(`detectionInterval`, 기본 0.4초마다)와 소리 점수가 들어왔을 때(약 0.5초마다) | `DogRiskReport`를 돌려줍니다. |
+| `reset()` | 연결을 멈추거나 다시 시작할 때 | 쌓아 둔 기록을 지웁니다. |
+
+탐지를 껐거나 영상이 없어도 소리 점수가 들어오면 `analyze`를 부릅니다.
+플러그인은 세션 내내 같은 인스턴스를 씁니다.
+그래서 여러 번의 `analyze` 사이에 기록을 쌓을 수 있습니다.
+
+`analyze`에 들어오는 `DogRiskSignals`의 필드는 다음과 같습니다.
+
+| 필드 | 타입 | 내용 |
+| --- | --- | --- |
+| `detections` | `List<YOLOResult>` | detect 모델 결과 전체(COCO 80종)입니다. 탐지를 껐거나 아직 프레임이 없으면 빈 리스트입니다. |
+| `dogPoses` | `List<YOLOResult>?` | dog-pose 모델 결과(키포인트 24개)입니다. 포즈 모델이 없으면 `null`입니다. |
+| `sound` | `SoundScores?` | YAMNet이 낸 521종 소리 점수(0~1)입니다. 으르렁 감지를 껐거나 아직 소리가 없으면 `null`입니다. |
+
+소리 점수는 `signals.sound?["Growling"]`처럼 레이블 이름으로 꺼냅니다.
+YAMNet 레이블이 아닌 이름을 넣으면 `ArgumentError`가 납니다.
+전체 레이블 목록은 `SoundScores.labels`에 있습니다.
+쓸 만한 레이블은 다음과 같습니다.
+
+| 레이블 | 번호 | 소리 |
+| --- | --- | --- |
+| `Growling` | 74 | 으르렁 |
+| `Bark` | 70 | 짖음 |
+| `Whimper (dog)` | 75 | 강아지 낑낑거림 |
+| `Baby cry, infant cry` | 20 | 아기 울음 |
+| `Screaming` | 11 | 비명 |
+| `Crying, sobbing` | 19 | 울음 |
+
+아래 예시는 으르렁이 4번 연속(약 2초) 이어질 때만 위험도를 `high`로 판정합니다.
+자기만의 값(여기서는 0~100 점수)은 `DogRiskReport`를 상속한 클래스에 담아 돌려줍니다.
+
+```dart
+class MyReport extends DogRiskReport {
+  const MyReport({required super.level, super.growlScore, required this.score});
+
+  final int score;
+}
+
+class MyDogRiskAnalyzer extends DogRiskAnalyzer {
+  SoundScores? _lastSound;
+  int _growlCount = 0;
+
+  @override
+  DogRiskReport analyze(DogRiskSignals signals) {
+    final SoundScores? sound = signals.sound;
+    // analyze는 영상 프레임이 들어올 때도 불리므로, 새 소리 점수가 왔을 때만 셉니다.
+    if (sound != null && !identical(sound, _lastSound)) {
+      _lastSound = sound;
+      _growlCount = sound["Growling"] >= 0.5 ? _growlCount + 1 : 0;
+    }
+    final double? growlScore = sound?["Growling"];
+    return MyReport(
+      // 소리 점수는 약 0.5초마다 들어오므로 4번이면 약 2초입니다.
+      level: _growlCount >= 4 ? DogRiskLevel.high : DogRiskLevel.low,
+      growlScore: growlScore,
+      score: ((growlScore ?? 0) * 100).round(),
+    );
+  }
+
+  @override
+  void reset() {
+    _lastSound = null;
+    _growlCount = 0;
+  }
+}
+
+LiveStreamingView(
+  role: Role.receiver,
+  enableGrowlDetection: true,
+  dogRiskAnalyzer: MyDogRiskAnalyzer(),
+  onDogRiskAnalyzed: (DogRiskReport report) {
+    if (report is MyReport) {
+      // report.score를 앱 화면에 보여 줍니다.
+    }
+  },
+);
+```
+
+`onDogRiskAnalyzed`는 `DogRiskReport` 타입으로 받습니다.
+직접 만든 클래스의 값은 `MyReport`로 형 변환해 꺼냅니다.
+예시처럼 `report is MyReport`로 확인하면 그 블록 안에서 자동으로 형 변환됩니다.
+오버레이의 위험도 배지는 `level`만 씁니다.
+
+`analyze`가 예외를 던지면 플러그인은 다음과 같이 처리합니다.
+
+| 상황 | 플러그인 동작 |
+| --- | --- |
+| 예외가 처음 남 | 위험도를 비우고 `onError`로 `위험도 판정 실패: ...`를 알립니다. |
+| 예외가 계속 이어짐 | 다시 알리지 않습니다. |
+| 판정이 한 번 성공한 뒤 다시 예외가 남 | 다시 알립니다. |
 
 ### 포즈 모델 학습
 
@@ -366,7 +473,8 @@ YAMNet 모델은 플러그인에 들어 있어 따로 준비할 필요가 없습
 | 으르렁 | YAMNet은 놀이 중 으르렁과 공격 전 으르렁을 구분하지 못합니다. |
 | 용도 | 이 위험도는 보호자가 한 번 살펴볼 순간을 알려 주는 수준입니다. 안전을 보장하지 않습니다. |
 
-임계값은 `dogRiskThresholds`로 조정할 수 있습니다.
+임계값은 `RuleBasedDogRiskAnalyzer(thresholds: DogRiskThresholds(...))`로 조정할 수 있습니다.
+판정 방식 자체를 바꾸려면 [판정 로직 바꾸기](#판정-로직-바꾸기)를 참고해 주세요.
 
 ## 예제
 
