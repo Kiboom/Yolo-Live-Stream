@@ -54,7 +54,7 @@ class DogRiskReport {
   final bool? isTailRaised;
   final bool? isHeadLoweredForward;
 
-  /// 으르렁 감지를 껐으면 null.
+  /// 으르렁 감지를 껐거나 아직 소리가 없으면 null.
   final double? growlScore;
 }
 

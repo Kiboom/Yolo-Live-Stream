@@ -41,7 +41,11 @@ YOLOResult detection(String className, Rect box) => YOLOResult(
   normalizedBox: box,
 );
 
-YOLOResult dogPose(Map<int, Offset> points, {Rect box = dogBox, double confidence = 0.9}) => YOLOResult(
+YOLOResult dogPose(
+  Map<int, Offset> points, {
+  Rect box = dogBox,
+  double confidence = 0.9,
+}) => YOLOResult(
   classIndex: 0,
   className: "dog",
   confidence: 0.9,
@@ -55,12 +59,13 @@ DogRiskReport analyze({
   Rect? personBox = nearPersonBox,
   Map<int, Offset>? points,
   Map<String, double>? sound,
+  DogRiskThresholds thresholds = const DogRiskThresholds(),
 }) {
   final scores = Float32List(SoundScores.labels.length);
   for (final MapEntry(key: label, value: score) in {...?sound}.entries) {
     scores[SoundScores.labels.indexOf(label)] = score;
   }
-  return const RuleBasedDogRiskAnalyzer().analyze(
+  return RuleBasedDogRiskAnalyzer(thresholds: thresholds).analyze(
     DogRiskSignals(
       detections: [
         detection("dog", dogBox),
@@ -109,7 +114,10 @@ void main() {
             detection("person", nearPersonBox),
           ],
           dogPoses: [
-            dogPose(lyingElsewhere, box: otherDogBox),
+            dogPose(
+              lyingElsewhere,
+              box: otherDogBox,
+            ),
             dogPose(standingPoints),
           ],
         ),
@@ -160,7 +168,12 @@ void main() {
       final report = const RuleBasedDogRiskAnalyzer().analyze(
         DogRiskSignals(
           detections: [detection("dog", dogBox)],
-          dogPoses: [dogPose(standingPoints, confidence: 0.3)],
+          dogPoses: [
+            dogPose(
+              standingPoints,
+              confidence: 0.3,
+            ),
+          ],
         ),
       );
       expect(report.posture, DogPosture.unknown);
@@ -175,7 +188,12 @@ void main() {
       final report = const RuleBasedDogRiskAnalyzer().analyze(
         DogRiskSignals(
           detections: [detection("dog", dogBox), detection("person", nearPersonBox)],
-          dogPoses: [dogPose(standingPoints, box: const Rect.fromLTRB(900, 100, 1100, 260))],
+          dogPoses: [
+            dogPose(
+              standingPoints,
+              box: const Rect.fromLTRB(900, 100, 1100, 260),
+            ),
+          ],
         ),
       );
       expect(report.posture, DogPosture.unknown);
@@ -192,7 +210,10 @@ void main() {
 
     test("옆모습에서 사람 반대쪽을 보면 false", () {
       expect(
-        analyze(personBox: const Rect.fromLTRB(-150, 100, -50, 300), points: standingPoints).isFacingPerson,
+        analyze(
+          personBox: const Rect.fromLTRB(-150, 100, -50, 300),
+          points: standingPoints,
+        ).isFacingPerson,
         isFalse,
       );
     });
@@ -240,7 +261,13 @@ void main() {
     });
 
     test("사람이 없으면 null", () {
-      expect(analyze(personBox: null, points: standingPoints).isFacingPerson, isNull);
+      expect(
+        analyze(
+          personBox: null,
+          points: standingPoints,
+        ).isFacingPerson,
+        isNull,
+      );
     });
   });
 
@@ -348,6 +375,15 @@ void main() {
       );
       expect(report.growlScore, 0);
       expect(report.level, DogRiskLevel.low);
+    });
+
+    test("기준값이 float32로 정확히 표현되지 않아도 기준값과 같은 점수는 으르렁으로 본다", () {
+      final report = analyze(
+        personBox: farPersonBox,
+        sound: {"Growling": 0.7},
+        thresholds: const DogRiskThresholds(growlScore: 0.7),
+      );
+      expect(report.level, DogRiskLevel.caution);
     });
   });
 

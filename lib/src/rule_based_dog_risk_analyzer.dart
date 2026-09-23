@@ -1,4 +1,5 @@
 import "dart:math" as math;
+import "dart:typed_data";
 import "dart:ui";
 
 import "package:ultralytics_yolo/ultralytics_yolo.dart";
@@ -45,7 +46,8 @@ class RuleBasedDogRiskAnalyzer extends DogRiskAnalyzer {
     final isHeadLoweredForward = pose?.isHeadLoweredForward;
 
     final isNear = distance != null && distance < thresholds.nearDistance;
-    final isGrowling = growlScore != null && growlScore >= thresholds.growlScore;
+    // 점수는 float32라 기준값도 float32로 맞춘다. double로 비교하면 0.7 같은 기준값에서 같은 점수가 기준 미만이 된다.
+    final isGrowling = growlScore != null && growlScore >= Float32List.fromList([thresholds.growlScore]).single;
     // 긴장 신호는 오탐이 잦아, 가까이서 사람을 볼 때만 위험도를 올린다.
     final isTense = isTailRaised == true || isHeadLoweredForward == true;
     final level = isNear && (isGrowling || (isFacingPerson == true && isTense))
