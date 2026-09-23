@@ -8,7 +8,7 @@ final class GrowlAnalyzer: NSObject, FlutterStreamHandler, ExternalAudioProcessi
   private static let modelSampleRate = 16000.0
   private static let windowLength = 15600
   private static let hopLength = 8000
-  private static let growlingIndex = 74
+  private static let classCount = 521
 
   private let modelPath: String?
   private let inferenceQueue = DispatchQueue(label: "yolo_live_stream.growl_analyzer", qos: .userInitiated)
@@ -224,10 +224,15 @@ final class GrowlAnalyzer: NSObject, FlutterStreamHandler, ExternalAudioProcessi
       try interpreter.copy(input, toInputAt: 0)
       try interpreter.invoke()
       let output = try interpreter.output(at: 0)
-      let score = output.data.withUnsafeBytes { Double($0.bindMemory(to: Float32.self)[GrowlAnalyzer.growlingIndex]) }
+      guard output.dataType == .float32, output.shape.dimensions.reduce(1, *) == GrowlAnalyzer.classCount else {
+        NSLog("GrowlAnalyzer expected \(GrowlAnalyzer.classCount) float32 scores but got \(output.dataType) \(output.shape.dimensions)")
+        return
+      }
+      // Tensor.data is a fresh copy of the interpreter buffer, so the next inference cannot overwrite it before it is sent.
+      let scores = FlutterStandardTypedData(float32: output.data)
       DispatchQueue.main.async { [weak self] in
         guard let self, token == self.currentSession() else { return }
-        self.eventSink?(score)
+        self.eventSink?(scores)
       }
     } catch {
       NSLog("GrowlAnalyzer inference failed: \(error)")
