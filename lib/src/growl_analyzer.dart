@@ -1,6 +1,7 @@
 import "dart:async";
 import "dart:typed_data";
 
+import "package:flutter/foundation.dart";
 import "package:flutter/services.dart";
 import "package:yolo_live_stream/src/sound_scores.dart";
 
@@ -29,6 +30,8 @@ class GrowlAnalyzer {
   /// 최신 소리 점수. 분석 전이거나 멈췄으면 null.
   SoundScores? soundScores;
 
+  bool _hasLoggedInvalidScores = false;
+
   Future<void> start({required bool muteOutput}) async {
     _subscription ??= const EventChannel("yolo_live_stream/growl_analyzer/scores").receiveBroadcastStream().listen(_handleScores);
     await _methodChannel.invokeMethod<void>("start", {"muteOutput": muteOutput});
@@ -37,18 +40,26 @@ class GrowlAnalyzer {
   Future<void> setOutputMuted(bool muted) => _methodChannel.invokeMethod<void>("setOutputMuted", {"muted": muted});
 
   Future<void> stop() async {
-    // cancel을 기다리는 사이 start가 불려도 새 구독을 만들 수 있게, 필드를 먼저 비운다.
+    // 구독을 먼저 풀면 네이티브가 멈추기 전에 보낸 점수가 채널 버퍼에 남아 다음 start에 전달되므로, 네이티브가 멈출 때까지 구독을 둔 채 점수를 버린다.
     final StreamSubscription<dynamic>? subscription = _subscription;
     _subscription = null;
     soundScores = null;
-    await subscription?.cancel();
-    await _methodChannel.invokeMethod<void>("stop");
+    subscription?.onData(null);
+    try {
+      await _methodChannel.invokeMethod<void>("stop");
+    } finally {
+      await subscription?.cancel();
+    }
     onUpdate();
   }
 
   void _handleScores(dynamic event) {
     final SoundScores? latest = _parseSoundScores(event);
-    if (latest == null) return;
+    if (latest == null) {
+      if (!_hasLoggedInvalidScores) debugPrint("GrowlAnalyzer: 숫자 ${SoundScores.labels.length}개가 아닌 소리 점수를 무시했습니다 (${event.runtimeType})");
+      _hasLoggedInvalidScores = true;
+      return;
+    }
     soundScores = latest;
     onSoundScores?.call(latest);
     onUpdate();

@@ -1,5 +1,6 @@
 import "dart:typed_data";
 
+import "package:flutter/foundation.dart";
 import "package:flutter/services.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:yolo_live_stream/src/growl_analyzer.dart";
@@ -113,5 +114,35 @@ void main() {
     messenger.setMessageHandler(scoresChannel.name, (ByteData? message) async => null);
     await pumpEventQueue();
     messenger.setMessageHandler(scoresChannel.name, null);
+  });
+
+  test("stop 도중 네이티브가 보낸 점수는 다음 start에도 반영하지 않는다", () async {
+    final GrowlAnalyzer analyzer = await startAnalyzer();
+    messenger.setMockMethodCallHandler(growlChannel, (MethodCall call) async {
+      growlCalls.add(call);
+      if (call.method == "stop") {
+        scoresSink?.success(createGrowlingScores(0.9));
+        await pumpEventQueue();
+      }
+      return null;
+    });
+    await analyzer.stop();
+    await analyzer.start(muteOutput: true);
+    await pumpEventQueue();
+    expect(analyzer.soundScores, isNull);
+    expect(receivedScores, isEmpty);
+    await sendScores(createGrowlingScores(0.25));
+    expect(analyzer.soundScores?["Growling"], 0.25);
+  });
+
+  test("무시한 이벤트는 처음 한 번만 debugPrint로 알린다", () async {
+    final List<String?> logs = [];
+    final DebugPrintCallback originalDebugPrint = debugPrint;
+    debugPrint = (String? message, {int? wrapWidth}) => logs.add(message);
+    addTearDown(() => debugPrint = originalDebugPrint);
+    await startAnalyzer();
+    await sendScores(Float32List(3));
+    await sendScores(Float32List(4));
+    expect(logs, hasLength(1));
   });
 }
