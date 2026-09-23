@@ -33,7 +33,7 @@ const Map<int, Offset> standingPoints = {
   22: Offset(230, 140),
 };
 
-YOLOResult detection(String className, Rect box) => YOLOResult(
+YOLOResult createDetection(String className, Rect box) => YOLOResult(
   classIndex: 0,
   className: className,
   confidence: 0.9,
@@ -41,7 +41,7 @@ YOLOResult detection(String className, Rect box) => YOLOResult(
   normalizedBox: box,
 );
 
-YOLOResult dogPose(
+YOLOResult createDogPose(
   Map<int, Offset> points, {
   Rect box = dogBox,
   double confidence = 0.9,
@@ -68,10 +68,10 @@ DogRiskReport analyze({
   return RuleBasedDogRiskAnalyzer(thresholds: thresholds).analyze(
     DogRiskSignals(
       detections: [
-        detection("dog", dogBox),
-        if (personBox != null) detection("person", personBox),
+        createDetection("dog", dogBox),
+        if (personBox != null) createDetection("person", personBox),
       ],
-      dogPoses: points == null ? null : [dogPose(points)],
+      dogPoses: points == null ? null : [createDogPose(points)],
       sound: sound == null ? null : SoundScores(scores),
     ),
   );
@@ -94,7 +94,7 @@ void main() {
 
     test("강아지가 없으면 null", () {
       final report = const RuleBasedDogRiskAnalyzer().analyze(
-        DogRiskSignals(detections: [detection("person", nearPersonBox)]),
+        DogRiskSignals(detections: [createDetection("person", nearPersonBox)]),
       );
       expect(report.distance, isNull);
       expect(report.level, DogRiskLevel.low);
@@ -109,16 +109,16 @@ void main() {
       final report = const RuleBasedDogRiskAnalyzer().analyze(
         DogRiskSignals(
           detections: [
-            detection("dog", otherDogBox),
-            detection("dog", dogBox),
-            detection("person", nearPersonBox),
+            createDetection("dog", otherDogBox),
+            createDetection("dog", dogBox),
+            createDetection("person", nearPersonBox),
           ],
           dogPoses: [
-            dogPose(
+            createDogPose(
               lyingElsewhere,
               box: otherDogBox,
             ),
-            dogPose(standingPoints),
+            createDogPose(standingPoints),
           ],
         ),
       );
@@ -167,9 +167,9 @@ void main() {
     test("키포인트 신뢰도가 기준 미만이면 unknown", () {
       final report = const RuleBasedDogRiskAnalyzer().analyze(
         DogRiskSignals(
-          detections: [detection("dog", dogBox)],
+          detections: [createDetection("dog", dogBox)],
           dogPoses: [
-            dogPose(
+            createDogPose(
               standingPoints,
               confidence: 0.3,
             ),
@@ -187,9 +187,9 @@ void main() {
     test("강아지 박스와 겹치는 포즈가 없으면 unknown이고 나머지는 null", () {
       final report = const RuleBasedDogRiskAnalyzer().analyze(
         DogRiskSignals(
-          detections: [detection("dog", dogBox), detection("person", nearPersonBox)],
+          detections: [createDetection("dog", dogBox), createDetection("person", nearPersonBox)],
           dogPoses: [
-            dogPose(
+            createDogPose(
               standingPoints,
               box: const Rect.fromLTRB(900, 100, 1100, 260),
             ),
