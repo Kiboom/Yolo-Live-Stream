@@ -220,6 +220,7 @@ class LiveStreamingController extends ChangeNotifier {
   /// 수신자로 [senderIp]에 접속하고, 받은 영상에 객체 탐지를 돌린다.
   Future<void> startAsReceiver(String senderIp) async {
     await prepare();
+    _isDogRiskFailing = false;
     _resetDogRiskAnalyzer();
     _isStarted = true;
     _notify();

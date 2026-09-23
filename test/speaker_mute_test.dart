@@ -159,6 +159,22 @@ void main() {
     expect(errors, hasLength(2));
     expect(controller.dogRiskReport, isNull);
   });
+  test("reports the analyzer error again when it still fails after a stop and a new receiver start", () async {
+    final FakeDogRiskAnalyzer analyzer = FakeDogRiskAnalyzer()..isFailing = true;
+    final List<String> errors = [];
+    final LiveStreamingController controller = LiveStreamingController(
+      enableDetection: false,
+      dogRiskAnalyzer: analyzer,
+      onError: errors.add,
+    );
+    await controller.prepare();
+    controller.handleDetected(const []);
+    controller.handleDetected(const []);
+    await controller.stop();
+    await controller.startAsReceiver("127.0.0.1");
+    controller.handleDetected(const []);
+    expect(errors.where((String message) => message.startsWith("위험도 판정 실패")), hasLength(2));
+  });
   test("resets the injected analyzer before a receiver starts and on stop", () async {
     final FakeDogRiskAnalyzer analyzer = FakeDogRiskAnalyzer();
     final LiveStreamingController controller = LiveStreamingController(
