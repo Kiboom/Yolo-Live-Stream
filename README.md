@@ -13,7 +13,7 @@
 
 ```yaml
 dependencies:
-  yolo_live_stream: ^0.12.0
+  yolo_live_stream: ^0.13.0
 ```
 
 ## 사용법
@@ -226,8 +226,18 @@ flutter:
 
 두 플랫폼을 모두 지원하려면 형식에 맞는 파일을 각각 준비해야 합니다.
 
-- Android: `.tflite` (예: int8 양자화)
-- iOS: `.mlpackage.zip` (CoreML)
+- Android: `.tflite` (동적 int8 양자화)
+- iOS: `.mlpackage.zip` (CoreML, int8 양자화)
+
+제공된 스크립트를 사용하면 학습한 가중치(`.pt`)를 두 형식으로 내보낼 수 있습니다.
+
+```bash
+pip install -r tool/requirements.txt
+python3 tool/export_custom_model.py --weights best.pt --export both
+```
+
+`--export`에는 `tflite`, `coreml`, `both`(기본값) 중 하나를 지정하고, 입력 크기는 `--imgsz`(기본값 640)로 바꿀 수 있습니다.
+스크립트는 내보낸 파일을 플러그인이 읽을 수 있는지 검사하고, 읽을 수 없으면 실패합니다.
 
 ```dart
 import "dart:io";
@@ -248,8 +258,9 @@ flutter:
     - assets/models/
 ```
 
-> **detection(`task=detect`)** 모델만 지원합니다. Ultralytics에서 내보낼 때는
-> `yolo export format=tflite int8=True`(Android), `yolo export format=coreml`(iOS)로 내보냅니다.
+> **detection(`task=detect`)** 모델만 지원합니다.
+> 플러그인이 읽는 입력 레이아웃과 텐서 이름이 정해져 있으므로 Ultralytics의 `export()`를 직접 호출하지 말고 제공된 스크립트를 사용하세요.
+> 두 플랫폼용 모델을 함께 만들려면 Linux 환경이나 Python 3.12가 설치된 macOS를 권장합니다.
 
 ## 강아지 위험도
 
@@ -327,9 +338,13 @@ python3 tool/train_dog_pose.py --epochs 100 --imgsz 640 --model yolo26n-pose.pt 
 
 생성된 `.tflite`와 `.mlpackage.zip` 파일을 앱의 `assets/models/`에 넣고, 플랫폼에 맞는 경로를
 `dogPoseModelPath`로 전달합니다. 이미 학습한 모델은 `--weights best.pt` 옵션으로 변환만 할 수 있습니다.
+0.12.0 스크립트로 만든 `.tflite`는 Android에서 불러오지 못하므로, 이 옵션으로 다시 내보내세요.
 
 > 모델 형식과 출력 구조가 정해져 있으므로 Ultralytics의 `export()`를 직접 호출하지 말고 제공된 스크립트를 사용하세요.
 > 두 플랫폼용 모델을 함께 만들려면 Linux 환경이나 Python 3.12가 설치된 macOS를 권장합니다.
+
+포즈 모델을 불러오지 못해도 사람과 강아지 탐지는 계속합니다.
+이때 `onError`로 `포즈 모델 로드 실패: ...`를 한 번 알리고, 위험도는 거리와 으르렁 점수만으로 판정합니다.
 
 으르렁 소리는 내장된 YAMNet 모델로 분석하며, 스피커를 꺼도 감지는 계속됩니다. YAMNet 모델의 출력이
 521종이 아니면 모델을 불러올 때 으르렁 감지를 시작하지 못합니다. 이때 `onError`로
