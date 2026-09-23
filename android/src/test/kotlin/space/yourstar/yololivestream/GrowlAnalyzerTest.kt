@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 internal class GrowlAnalyzerTest {
@@ -73,6 +74,24 @@ internal class GrowlAnalyzerTest {
         assertTrue(window.append(FloatArray(YAMNET_WINDOW_SAMPLES), YAMNET_WINDOW_SAMPLES))
         window.clear()
         assertFalse(window.append(FloatArray(YAMNET_HOP_SAMPLES), YAMNET_HOP_SAMPLES))
+    }
+
+    @Test
+    fun copyClassScores_returnsAll521ScoresAsIndependentCopy() {
+        val output = FloatArray(YAMNET_CLASS_COUNT) { it / YAMNET_CLASS_COUNT.toFloat() }
+
+        val scores = copyClassScores(output)!!
+        output.fill(0f)
+
+        assertEquals(YAMNET_CLASS_COUNT, scores.size)
+        assertEquals(74 / 521f, scores[74])
+        assertEquals(520 / 521f, scores.last())
+    }
+
+    @Test
+    fun copyClassScores_rejectsOutputThatIsNot521Scores() {
+        assertNull(copyClassScores(FloatArray(YAMNET_CLASS_COUNT - 1)))
+        assertNull(copyClassScores(FloatArray(1024)))
     }
 
     @Test
