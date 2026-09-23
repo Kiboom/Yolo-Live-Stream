@@ -234,9 +234,10 @@ class LiveStreamingController extends ChangeNotifier {
     }
     // 오디오 트랙은 SDP 교환 뒤에 도착하므로, YOLO 로드를 기다리지 않고 먼저 걸어야 트랙이 켜지기 전에 음소거가 적용된다.
     await startGrowlDetection();
-    if (_analyzer != null) {
+    final YoloAnalyzer? analyzer = _analyzer;
+    if (analyzer != null) {
       try {
-        await _analyzer!.start();
+        await analyzer.start();
       } catch (error) {
         onError?.call("YOLO 모델 로드 실패: $error");
       }
