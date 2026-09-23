@@ -26,6 +26,7 @@ class YoloAnalyzer {
     required this.onUpdate,
     required this.getRemoteTrack,
     this.onDetected,
+    this.onError,
     this.model = YoloModel.medium,
     this.customModelPath,
     this.dogPoseModelPath,
@@ -55,10 +56,12 @@ class YoloAnalyzer {
   final void Function() onUpdate;
   /// 매 프레임 분석이 끝나면 그 결과로 호출된다.
   final void Function(List<YOLOResult> detections)? onDetected;
+  /// 포즈 모델을 불러오지 못하면 포즈 추정 없이 탐지를 계속하고, 그 오류를 이것으로 한 번 알린다.
+  final void Function(String message)? onError;
   final MediaStreamTrack? Function() getRemoteTrack;
   late final YOLO _yolo = YOLO(modelPath: customModelPath ?? model.id, task: YOLOTask.detect);
   // 기본 인스턴스를 같이 쓰면 네이티브에서 detect 모델이 포즈 모델로 교체되므로 별도 인스턴스로 띄운다.
-  late final YOLO? _dogPoseYolo = dogPoseModelPath == null ? null : YOLO(modelPath: dogPoseModelPath ?? "", task: YOLOTask.pose, useMultiInstance: true);
+  late YOLO? _dogPoseYolo = dogPoseModelPath == null ? null : YOLO(modelPath: dogPoseModelPath ?? "", task: YOLOTask.pose, useMultiInstance: true);
   bool _isModelLoaded = false;
   bool _isBusy = false;
   int _generation = 0; // stop()마다 올려, 멈추기 전에 시작한 분석의 늦은 결과를 버린다
@@ -76,7 +79,7 @@ class YoloAnalyzer {
       debugStatus = "모델 로딩 중...";
       onUpdate();
       await _yolo.loadModel();
-      await _dogPoseYolo?.loadModel();
+      await _loadDogPoseModel();
       _isModelLoaded = true;
       // 로드 중에 stop()이 불렸으면 타이머를 만들지 않아야 멈춘 뒤 분석이 되살아나지 않는다.
       if (generation != _generation) return;
@@ -84,6 +87,19 @@ class YoloAnalyzer {
       onUpdate();
     }
     _timer ??= Timer.periodic(interval, (_) => analyzeFrame());
+  }
+
+  // 포즈 모델을 못 불러와도 사람과 강아지 탐지는 이어가도록, 포즈 추정만 끄고 오류를 알린다.
+  Future<void> _loadDogPoseModel() async {
+    final YOLO? dogPoseYolo = _dogPoseYolo;
+    if (dogPoseYolo == null) return;
+    try {
+      await dogPoseYolo.loadModel();
+    } catch (error) {
+      _dogPoseYolo = null;
+      onError?.call("포즈 모델 로드 실패: $error");
+      await dogPoseYolo.dispose();
+    }
   }
 
   /// 프레임 하나를 캡처해 분석한다. 보통은 [start]의 타이머가 부르고, 테스트는 직접 부른다.
@@ -141,7 +157,7 @@ class YoloAnalyzer {
     _isBusy = false; // in-flight 분석이 트랙 폐기로 안 끝나도 재연결 시 멈추지 않도록 리셋
 
     detections = [];
-    dogPoses = dogPoseModelPath == null ? null : [];
+    dogPoses = _dogPoseYolo == null ? null : [];
     onUpdate();
   }
 

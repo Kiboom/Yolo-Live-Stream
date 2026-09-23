@@ -143,6 +143,7 @@ class LiveStreamingController extends ChangeNotifier {
       _analyzer = YoloAnalyzer(
         onUpdate: _notify,
         onDetected: handleDetected,
+        onError: onError,
         getRemoteTrack: () => connection.remoteVideoTrack,
         model: model,
         customModelPath: customModelPath,
