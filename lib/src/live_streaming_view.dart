@@ -7,6 +7,7 @@ import "package:yolo_live_stream/src/growl_analyzer.dart";
 import "package:yolo_live_stream/src/live_streaming_connector.dart";
 import "package:yolo_live_stream/src/role.dart";
 import "package:yolo_live_stream/src/rule_based_dog_risk_analyzer.dart";
+import "package:yolo_live_stream/src/sound_scores.dart";
 import "package:yolo_live_stream/src/yolo_analyzer.dart";
 
 /// 영상 세션(WebRTC 연결 + 렌더러 + YOLO 분석기)을 소유하는 핸들.
@@ -28,7 +29,7 @@ class LiveStreamingController extends ChangeNotifier {
     this.detectionInterval = const Duration(milliseconds: 400),
     this.dogPoseModelPath,
     this.enableGrowlDetection = false,
-    this.dogRiskThresholds = const DogRiskThresholds(),
+    this.dogRiskAnalyzer = const RuleBasedDogRiskAnalyzer(),
     this.onDetected,
     this.onDogRiskAnalyzed,
     this.onLocalIpReady,
@@ -65,13 +66,13 @@ class LiveStreamingController extends ChangeNotifier {
   /// 수신 음성에서 으르렁 소리를 감지할지(수신자만).
   final bool enableGrowlDetection;
 
-  /// 위험도 판정 임계값.
-  final DogRiskThresholds dogRiskThresholds;
+  /// 위험도 판정 로직. 세션 내내 같은 인스턴스를 쓴다. 임계값만 바꾸려면 `RuleBasedDogRiskAnalyzer(thresholds: ...)`를 넘긴다.
+  final DogRiskAnalyzer dogRiskAnalyzer;
 
   /// 매 프레임 YOLO 분석 결과로 호출된다(탐지를 켰을 때만).
   final void Function(List<YOLOResult> detections)? onDetected;
 
-  /// 매 프레임 위험도 분석 결과로 호출된다(탐지를 켰을 때만).
+  /// 영상 프레임이나 소리 점수가 들어와 위험도를 판정할 때마다 호출된다.
   final void Function(DogRiskReport report)? onDogRiskAnalyzed;
 
   /// 송신자로 시작해 자기 IP가 정해지면 호출된다.
@@ -92,6 +93,7 @@ class LiveStreamingController extends ChangeNotifier {
   YoloAnalyzer? _analyzer;
   GrowlAnalyzer? _growlAnalyzer;
   DogRiskReport? _dogRiskReport;
+  bool _isDogRiskFailing = false;
 
   bool _ready = false;
   bool _isStarted = false;
@@ -106,7 +108,7 @@ class LiveStreamingController extends ChangeNotifier {
   /// 최신 강아지 포즈 결과(포즈 모델이 없으면 null).
   List<YOLOResult>? get dogPoses => _analyzer?.dogPoses;
 
-  /// 최신 위험도 분석 결과(탐지를 껐거나 아직 분석 전이면 null).
+  /// 최신 위험도 판정 결과. 아직 판정 전이거나 판정 로직이 예외를 던졌으면 null.
   DogRiskReport? get dogRiskReport => _dogRiskReport;
 
   /// 분석 상태/오류 문자열(디버그 표시용).
@@ -149,7 +151,10 @@ class LiveStreamingController extends ChangeNotifier {
       );
     }
     if (enableGrowlDetection) {
-      _growlAnalyzer = GrowlAnalyzer(onUpdate: _notify);
+      _growlAnalyzer = GrowlAnalyzer(
+        onUpdate: _notify,
+        onSoundScores: (SoundScores _) => _analyzeDogRisk(detections),
+      );
     }
     _ready = true;
   }
@@ -158,15 +163,44 @@ class LiveStreamingController extends ChangeNotifier {
   @visibleForTesting
   void handleDetected(List<YOLOResult> detections) {
     onDetected?.call(detections);
-    final DogRiskReport report = RuleBasedDogRiskAnalyzer(thresholds: dogRiskThresholds).analyze(
-      DogRiskSignals(
-        detections: detections,
-        dogPoses: dogPoses,
-        sound: _growlAnalyzer?.soundScores,
-      ),
-    );
+    _analyzeDogRisk(detections);
+  }
+
+  void _analyzeDogRisk(List<YOLOResult> detections) {
+    final DogRiskReport report;
+    try {
+      report = dogRiskAnalyzer.analyze(
+        DogRiskSignals(
+          detections: detections,
+          dogPoses: dogPoses,
+          sound: _growlAnalyzer?.soundScores,
+        ),
+      );
+    } catch (error) {
+      _handleDogRiskError(error);
+      return;
+    }
+    _isDogRiskFailing = false;
     _dogRiskReport = report;
     onDogRiskAnalyzed?.call(report);
+    _notify();
+  }
+
+  void _resetDogRiskAnalyzer() {
+    try {
+      dogRiskAnalyzer.reset();
+    } catch (error) {
+      _handleDogRiskError(error);
+    }
+  }
+
+  // 앱이 넣은 판정 로직의 예외가 YoloAnalyzer까지 올라가 분석 전체가 "분석 오류"로 멈추지 않게 여기서 막는다. 같은 오류가 이어지면 한 번만 알린다.
+  void _handleDogRiskError(Object error) {
+    _dogRiskReport = null;
+    _notify();
+    if (_isDogRiskFailing) return;
+    _isDogRiskFailing = true;
+    onError?.call("위험도 판정 실패: $error");
   }
 
   /// 송신자로 시작한다. 성공하면 자기 IP를 [onLocalIpReady]로 알린다.
@@ -186,6 +220,7 @@ class LiveStreamingController extends ChangeNotifier {
   /// 수신자로 [senderIp]에 접속하고, 받은 영상에 객체 탐지를 돌린다.
   Future<void> startAsReceiver(String senderIp) async {
     await prepare();
+    _resetDogRiskAnalyzer();
     _isStarted = true;
     _notify();
     connection.isGrowlDetectionEnabled = enableGrowlDetection;
@@ -231,6 +266,7 @@ class LiveStreamingController extends ChangeNotifier {
   Future<void> stop() async {
     _analyzer?.stop();
     _dogRiskReport = null;
+    _resetDogRiskAnalyzer();
     await _growlAnalyzer?.stop();
     await connection.close();
     _isStarted = false;
@@ -289,7 +325,7 @@ class LiveStreamingView extends StatefulWidget {
     this.detectionInterval = const Duration(milliseconds: 400),
     this.dogPoseModelPath,
     this.enableGrowlDetection = false,
-    this.dogRiskThresholds = const DogRiskThresholds(),
+    this.dogRiskAnalyzer = const RuleBasedDogRiskAnalyzer(),
     this.showControlPanel = true,
     this.showMirrorButton = false,
     this.showPip = true,
@@ -342,8 +378,8 @@ class LiveStreamingView extends StatefulWidget {
   /// 수신 음성에서 으르렁 소리를 감지할지(수신자만).
   final bool enableGrowlDetection;
 
-  /// 위험도 판정 임계값.
-  final DogRiskThresholds dogRiskThresholds;
+  /// 위험도 판정 로직. 세션 내내 같은 인스턴스를 쓴다. 임계값만 바꾸려면 `RuleBasedDogRiskAnalyzer(thresholds: ...)`를 넘긴다.
+  final DogRiskAnalyzer dogRiskAnalyzer;
 
   /// 내장 컨트롤 UI(IP 입력·시작/종료 버튼·상태 배지·PiP·카메라 전환 버튼)를 보일지.
   /// false면 영상과 탐지 오버레이만 남는다. 이땐 [autoStart]나 [controller]로 시작/종료한다.
@@ -364,7 +400,7 @@ class LiveStreamingView extends StatefulWidget {
   /// 매 프레임 YOLO 분석 결과로 호출된다(탐지를 켰을 때만).
   final void Function(List<YOLOResult> detections)? onDetected;
 
-  /// 매 프레임 위험도 분석 결과로 호출된다(탐지를 켰을 때만).
+  /// 영상 프레임이나 소리 점수가 들어와 위험도를 판정할 때마다 호출된다.
   final void Function(DogRiskReport report)? onDogRiskAnalyzed;
 
   /// 송신자로 시작해 자기 IP가 정해지면 호출된다.
@@ -403,7 +439,7 @@ class _LiveStreamingViewState extends State<LiveStreamingView> {
         detectionInterval: widget.detectionInterval,
         dogPoseModelPath: widget.dogPoseModelPath,
         enableGrowlDetection: widget.enableGrowlDetection,
-        dogRiskThresholds: widget.dogRiskThresholds,
+        dogRiskAnalyzer: widget.dogRiskAnalyzer,
         onDetected: widget.onDetected,
         onDogRiskAnalyzed: widget.onDogRiskAnalyzed,
         onLocalIpReady: widget.onLocalIpReady,
