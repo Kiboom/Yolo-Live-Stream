@@ -75,6 +75,102 @@ void main() {
     expect(controller.dogRiskReport, same(reports.single));
     expect(reports.single.distance, isNotNull);
   });
+  test("passes each frame's detections to the injected dog risk analyzer", () async {
+    final FakeDogRiskAnalyzer analyzer = FakeDogRiskAnalyzer();
+    final List<DogRiskReport> reports = [];
+    final LiveStreamingController controller = LiveStreamingController(
+      dogRiskAnalyzer: analyzer,
+      onDogRiskAnalyzed: reports.add,
+    );
+    await controller.prepare();
+    final List<YOLOResult> frame = [
+      YOLOResult(
+        classIndex: 16,
+        className: "dog",
+        confidence: 0.9,
+        boundingBox: const Rect.fromLTRB(120, 100, 220, 200),
+        normalizedBox: const Rect.fromLTRB(0.35, 0.5, 0.55, 0.8),
+      ),
+    ];
+    controller.handleDetected(frame);
+    expect(analyzer.receivedSignals.single.detections, same(frame));
+    expect(analyzer.receivedSignals.single.sound, isNull);
+    expect(controller.dogRiskReport, same(reports.single));
+  });
+  test("judges dog risk on sound scores even when detection is off", () async {
+    const EventChannel scoresChannel = EventChannel("yolo_live_stream/growl_analyzer/scores");
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockStreamHandler(
+      scoresChannel,
+      MockStreamHandler.inline(
+        onListen: (Object? arguments, MockStreamHandlerEventSink events) => events.success(Float32List(SoundScores.labels.length)),
+      ),
+    );
+    addTearDown(() => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockStreamHandler(scoresChannel, null));
+    final FakeDogRiskAnalyzer analyzer = FakeDogRiskAnalyzer();
+    final List<DogRiskReport> reports = [];
+    final LiveStreamingController controller = LiveStreamingController(
+      enableDetection: false,
+      enableGrowlDetection: true,
+      dogRiskAnalyzer: analyzer,
+      onDogRiskAnalyzed: reports.add,
+    );
+    await controller.prepare();
+    await controller.startGrowlDetection();
+    for (int i = 0; i < 5 && reports.isEmpty; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    expect(analyzer.receivedSignals.single.detections, isEmpty);
+    expect(analyzer.receivedSignals.single.dogPoses, isNull);
+    expect(analyzer.receivedSignals.single.sound, isNotNull);
+    expect(controller.dogRiskReport, same(reports.single));
+  });
+  test("clears the report and reports the analyzer error once while it keeps failing", () async {
+    final FakeDogRiskAnalyzer analyzer = FakeDogRiskAnalyzer();
+    final List<String> errors = [];
+    final LiveStreamingController controller = LiveStreamingController(
+      dogRiskAnalyzer: analyzer,
+      onError: errors.add,
+    );
+    await controller.prepare();
+    int notifyCount = 0;
+    controller.addListener(() => notifyCount++);
+    controller.handleDetected(const []);
+    expect(controller.dogRiskReport, isNotNull);
+    analyzer.isFailing = true;
+    controller.handleDetected(const []);
+    controller.handleDetected(const []);
+    expect(controller.dogRiskReport, isNull);
+    expect(errors, ["위험도 판정 실패: Bad state: analyze failed"]);
+    expect(notifyCount, 3);
+  });
+  test("reports the analyzer error again when it fails after a success", () async {
+    final FakeDogRiskAnalyzer analyzer = FakeDogRiskAnalyzer()..isFailing = true;
+    final List<String> errors = [];
+    final LiveStreamingController controller = LiveStreamingController(
+      dogRiskAnalyzer: analyzer,
+      onError: errors.add,
+    );
+    await controller.prepare();
+    controller.handleDetected(const []);
+    analyzer.isFailing = false;
+    controller.handleDetected(const []);
+    analyzer.isFailing = true;
+    controller.handleDetected(const []);
+    expect(errors, hasLength(2));
+    expect(controller.dogRiskReport, isNull);
+  });
+  test("resets the injected analyzer before a receiver starts and on stop", () async {
+    final FakeDogRiskAnalyzer analyzer = FakeDogRiskAnalyzer();
+    final LiveStreamingController controller = LiveStreamingController(
+      enableDetection: false,
+      dogRiskAnalyzer: analyzer,
+      onError: (String message) {},
+    );
+    await controller.startAsReceiver("127.0.0.1");
+    expect(analyzer.resetCount, 1);
+    await controller.stop();
+    expect(analyzer.resetCount, 2);
+  });
   test("restores the remote audio track to the speaker setting when the native growl start fails", () async {
     isGrowlStartFailing = true;
     final List<String> errors = [];
@@ -147,4 +243,20 @@ class FakeVideoTrack implements MediaStreamTrack {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class FakeDogRiskAnalyzer extends DogRiskAnalyzer {
+  final List<DogRiskSignals> receivedSignals = [];
+  bool isFailing = false;
+  int resetCount = 0;
+
+  @override
+  DogRiskReport analyze(DogRiskSignals signals) {
+    receivedSignals.add(signals);
+    if (isFailing) throw StateError("analyze failed");
+    return const DogRiskReport(level: DogRiskLevel.low);
+  }
+
+  @override
+  void reset() => resetCount++;
 }
