@@ -18,17 +18,14 @@ INPUT_NAME = "images"
 OUTPUT_NAME = "Identity"
 
 
-def find_row_width(weights):
+def find_row_width(model):
     """Return the end-to-end row width: box(4) + score(1) + class(1), plus x, y, visibility per pose keypoint."""
-    from ultralytics import YOLO
-
-    model = YOLO(weights)
     if model.task == "detect":
         return 6
     if model.task == "pose":
         keypoints, values = model.model.model[-1].kpt_shape
         return 6 + keypoints * values
-    raise SystemExit(f"{weights} is a {model.task} model; only detect and pose models are supported")
+    raise SystemExit(f"Only detect and pose models are supported, got a {model.task} model")
 
 
 def export_tflite(weights, imgsz):
@@ -123,16 +120,24 @@ def check_coreml(path, imgsz, row_width):
 
 
 def export_models(weights, imgsz, export):
-    row_width = find_row_width(weights)
+    from ultralytics import YOLO
+    from ultralytics.utils.checks import check_imgsz
+
+    model = YOLO(weights)
+    row_width = find_row_width(model)
+    # The exporter rounds the size up to a multiple of the model stride the same way.
+    size = check_imgsz(imgsz, stride=model.model.stride)
+    if size != imgsz:
+        print(f"Image size: {size} (--imgsz {imgsz} rounded up to a multiple of the model stride)")
 
     if export in ("tflite", "both"):
         tflite = export_tflite(weights, imgsz)
-        check_tflite(tflite, imgsz, row_width)
+        check_tflite(tflite, size, row_width)
         print(f"Android: {tflite}")
 
     if export in ("coreml", "both"):
         mlpackage = export_coreml(weights, imgsz)
-        check_coreml(mlpackage, imgsz, row_width)
+        check_coreml(mlpackage, size, row_width)
         archive = shutil.make_archive(str(mlpackage), "zip", root_dir=mlpackage.parent, base_dir=mlpackage.name)
         print(f"iOS: {archive}")
 
