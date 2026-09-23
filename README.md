@@ -13,11 +13,7 @@
 
 ```yaml
 dependencies:
-  yolo_live_stream:
-    git:
-      url: https://github.com/modoc-ai/yolo_live_stream.git
-    # 또는 로컬 경로:
-    # path: ../yolo_live_stream
+  yolo_live_stream: ^0.12.0
 ```
 
 ## 사용법
