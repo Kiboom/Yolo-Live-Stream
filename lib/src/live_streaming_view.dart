@@ -194,7 +194,7 @@ class LiveStreamingController extends ChangeNotifier {
     }
   }
 
-  // 앱이 넣은 판정 로직의 예외가 YoloAnalyzer까지 올라가 분석 전체가 "분석 오류"로 멈추지 않게 여기서 막는다. 같은 오류가 이어지면 한 번만 알린다.
+  // 앱이 넣은 판정 로직의 예외가 YoloAnalyzer의 "분석 오류"나 소리 스트림의 처리되지 않은 예외로 번지지 않게 여기서 받는다. 프레임마다 오류 알림이 쌓이지 않게 연속된 실패는 한 번만 알린다.
   void _handleDogRiskError(Object error) {
     _dogRiskReport = null;
     _notify();
