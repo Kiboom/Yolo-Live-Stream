@@ -30,22 +30,38 @@ class GrowlAnalyzer {
   SoundScores? soundScores;
 
   Future<void> start({required bool muteOutput}) async {
-    _subscription ??= const EventChannel("yolo_live_stream/growl_analyzer/scores").receiveBroadcastStream().listen((dynamic scores) {
-      final SoundScores latest = SoundScores(scores as Float32List);
-      soundScores = latest;
-      onSoundScores?.call(latest);
-      onUpdate();
-    });
+    _subscription ??= const EventChannel("yolo_live_stream/growl_analyzer/scores").receiveBroadcastStream().listen(_handleScores);
     await _methodChannel.invokeMethod<void>("start", {"muteOutput": muteOutput});
   }
 
   Future<void> setOutputMuted(bool muted) => _methodChannel.invokeMethod<void>("setOutputMuted", {"muted": muted});
 
   Future<void> stop() async {
-    await _subscription?.cancel();
+    // cancel을 기다리는 사이 start가 불려도 새 구독을 만들 수 있게, 필드를 먼저 비운다.
+    final StreamSubscription<dynamic>? subscription = _subscription;
     _subscription = null;
     soundScores = null;
+    await subscription?.cancel();
     await _methodChannel.invokeMethod<void>("stop");
     onUpdate();
+  }
+
+  void _handleScores(dynamic event) {
+    final SoundScores? latest = _parseSoundScores(event);
+    if (latest == null) return;
+    soundScores = latest;
+    onSoundScores?.call(latest);
+    onUpdate();
+  }
+
+  /// 플랫폼에 따라 Float64List나 숫자 리스트로 올 수 있다. 레이블 수와 길이가 다르면 null.
+  static SoundScores? _parseSoundScores(Object? event) {
+    if (event is! List<Object?> || event.length != SoundScores.labels.length) return null;
+    if (event is Float32List) return SoundScores(event);
+    final List<double> scores = [
+      for (final Object? score in event)
+        if (score is num) score.toDouble(),
+    ];
+    return scores.length == event.length ? SoundScores(Float32List.fromList(scores)) : null;
   }
 }
