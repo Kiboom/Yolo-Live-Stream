@@ -367,12 +367,12 @@ class MyDogRiskAnalyzer extends DogRiskAnalyzer {
   @override
   DogRiskReport analyze(DogRiskSignals signals) {
     final SoundScores? sound = signals.sound;
-    // analyze는 영상 프레임이 들어올 때도 불리므로, 새 소리 점수가 왔을 때만 셉니다.
-    if (sound != null && !identical(sound, _lastSound)) {
-      _lastSound = sound;
-      _growlCount = sound["Growling"] >= 0.5 ? _growlCount + 1 : 0;
-    }
     final double? growlScore = sound?["Growling"];
+    // analyze는 영상 프레임이 들어올 때도 불리므로, 새 소리 점수가 왔을 때만 셉니다.
+    if (growlScore != null && !identical(sound, _lastSound)) {
+      _lastSound = sound;
+      _growlCount = growlScore >= 0.5 ? _growlCount + 1 : 0;
+    }
     return MyReport(
       // 소리 점수는 약 0.5초마다 들어오므로 4번이면 약 2초입니다.
       level: _growlCount >= 4 ? DogRiskLevel.high : DogRiskLevel.low,
