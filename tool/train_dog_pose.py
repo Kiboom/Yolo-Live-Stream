@@ -16,6 +16,9 @@ from pathlib import Path
 
 # dog-pose keypoints; the Android pose decoder expects end-to-end rows of box(4) + score(1) + class(1) + 24 * xyc(3).
 END_TO_END_ROW = 6 + 24 * 3
+# The Android plugin reads the input and output shapes by these names; other names leave them empty and loading fails.
+INPUT_NAME = "images"
+OUTPUT_NAME = "Identity"
 
 
 def default_device():
@@ -30,16 +33,26 @@ def default_device():
 
 def export_tflite(weights, imgsz):
     import litert_torch
+    import torch
     from ultralytics import YOLO
 
     convert = litert_torch.convert
 
-    # LiteRT export keeps PyTorch's [1, 3, H, W] input, but the Android predictors feed [1, H, W, 3].
-    def convert_nhwc(module, sample_args, *args, **kwargs):
-        nhwc = litert_torch.to_channel_last_io(module, args=[0]).eval()
-        return convert(nhwc, (sample_args[0].permute(0, 2, 3, 1),), *args, **kwargs)
+    class PluginIO(torch.nn.Module):
+        def __init__(self, model):
+            super().__init__()
+            self.model = litert_torch.to_channel_last_io(model, args=[0])
 
-    litert_torch.convert = convert_nhwc
+        def forward(self, images):
+            return {OUTPUT_NAME: self.model(images)}
+
+    # LiteRT export keeps PyTorch's [1, 3, H, W] input and names the tensors args_0 and output_0.
+    # The Android predictors feed [1, H, W, 3] and look the tensors up by name.
+    def convert_for_plugin(module, sample_args, **kwargs):
+        sample_kwargs = {INPUT_NAME: sample_args[0].permute(0, 2, 3, 1)}
+        return convert(PluginIO(module).eval(), sample_kwargs=sample_kwargs, **kwargs)
+
+    litert_torch.convert = convert_for_plugin
     try:
         # Static int8 (quantize=8) disables the end-to-end head, so use dynamic int8 to keep end-to-end rows.
         return Path(YOLO(weights).export(format="litert", imgsz=imgsz, quantize="w8a32", nms=False))
@@ -48,16 +61,24 @@ def export_tflite(weights, imgsz):
 
 
 def check_tflite(path, imgsz):
+    from ai_edge_litert.compiled_model import CompiledModel
     from ai_edge_litert.interpreter import Interpreter
 
-    interpreter = Interpreter(model_path=str(path))
-    input_shape = interpreter.get_input_details()[0]["shape"].tolist()
-    output_shape = interpreter.get_output_details()[0]["shape"].tolist()
+    runner = Interpreter(model_path=str(path)).get_signature_runner()
+    inputs = {name: d["shape"].tolist() for name, d in runner.get_input_details().items()}
+    outputs = {name: d["shape"].tolist() for name, d in runner.get_output_details().items()}
+    input_shape, output_shape = inputs.get(INPUT_NAME), outputs.get(OUTPUT_NAME, [])
     if input_shape != [1, imgsz, imgsz, 3] or len(output_shape) != 3 or output_shape[2] != END_TO_END_ROW:
         raise SystemExit(
-            f"{path} cannot be loaded by ultralytics_yolo on Android: input {input_shape} (expected "
-            f"[1, {imgsz}, {imgsz}, 3]), output {output_shape} (expected [1, N, {END_TO_END_ROW}])"
+            f"{path} cannot be loaded by ultralytics_yolo on Android: inputs {inputs} (expected {INPUT_NAME} "
+            f"[1, {imgsz}, {imgsz}, 3]), outputs {outputs} (expected {OUTPUT_NAME} [1, N, {END_TO_END_ROW}])"
         )
+
+    # Repeat the plugin's by-name lookups on the same LiteRT CompiledModel runtime; they raise if a name is missing.
+    model = CompiledModel.from_file(str(path))
+    signature = model.get_signature_by_index(0)["key"]
+    model.create_input_buffer_by_name(signature, INPUT_NAME)
+    model.create_output_buffer_by_name(signature, OUTPUT_NAME)
 
 
 def main():
