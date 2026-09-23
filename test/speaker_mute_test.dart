@@ -247,6 +247,80 @@ void main() {
     expect(updateCount, stoppedUpdateCount);
     expect(analyzer.debugStatus, "모델 로딩 중...");
   });
+  test("keeps detecting without dog poses and reports the error once when the pose model fails to load", () async {
+    const MethodChannel yoloChannel = MethodChannel("yolo_single_image_channel");
+    final List<MethodChannel> poseChannels = [];
+    int posePredictCount = 0;
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(yoloChannel, null);
+      for (final MethodChannel poseChannel in poseChannels) {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(poseChannel, null);
+      }
+    });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(yoloChannel, (MethodCall call) async {
+      // 포즈 모델은 useMultiInstance라 createInstance로 받은 instanceId가 붙은 채널을 따로 쓴다.
+      if (call.method == "createInstance") {
+        final MethodChannel poseChannel = MethodChannel("yolo_single_image_channel_${(call.arguments as Map)["instanceId"]}");
+        poseChannels.add(poseChannel);
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(poseChannel, (MethodCall call) async {
+          if (call.method == "loadModel") throw PlatformException(code: "MODEL_NOT_FOUND");
+          if (call.method == "predictSingleImage") posePredictCount++;
+          return <String, dynamic>{};
+        });
+        return null;
+      }
+      if (call.method == "loadModel") return true;
+      if (call.method == "predictSingleImage") {
+        return {
+          "boxes": [
+            {"class": "dog", "confidence": 0.9, "x1": 120, "y1": 100, "x2": 220, "y2": 200},
+          ],
+        };
+      }
+      return <String, dynamic>{};
+    });
+    final List<String> errors = [];
+    final List<List<YOLOResult>> detectedFrames = [];
+    final YoloAnalyzer analyzer = YoloAnalyzer(
+      onUpdate: () {},
+      onDetected: detectedFrames.add,
+      onError: errors.add,
+      getRemoteTrack: () => FakeVideoTrack(Future<ByteBuffer>.value(Uint8List(4).buffer)),
+      customModelPath: "/models/detect.tflite",
+      dogPoseModelPath: "/models/dog_pose.tflite",
+      interval: const Duration(milliseconds: 10),
+    );
+    await analyzer.start();
+    for (int i = 0; i < 50 && detectedFrames.length < 3; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(detectedFrames.length, greaterThanOrEqualTo(3));
+    expect(detectedFrames.last.single.className, "dog");
+    expect(analyzer.dogPoses, isNull);
+    expect(posePredictCount, 0);
+    expect(errors, hasLength(1));
+    expect(errors.single, startsWith("포즈 모델 로드 실패: "));
+    analyzer.stop();
+    expect(analyzer.dogPoses, isNull);
+  });
+  test("still throws when the detect model fails to load", () async {
+    const MethodChannel yoloChannel = MethodChannel("yolo_single_image_channel");
+    addTearDown(() => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(yoloChannel, null));
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(yoloChannel, (MethodCall call) async {
+      if (call.method == "loadModel") throw PlatformException(code: "MODEL_NOT_FOUND");
+      return <String, dynamic>{};
+    });
+    final List<String> errors = [];
+    final YoloAnalyzer analyzer = YoloAnalyzer(
+      onUpdate: () {},
+      onError: errors.add,
+      getRemoteTrack: () => null,
+      customModelPath: "/models/detect.tflite",
+      dogPoseModelPath: "/models/dog_pose.tflite",
+    );
+    await expectLater(analyzer.start(), throwsA(isA<ModelLoadingException>()));
+    expect(errors, isEmpty);
+  });
 }
 
 class FakeVideoTrack implements MediaStreamTrack {
